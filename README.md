@@ -35,6 +35,24 @@ A repository with some Zabbix elements
 
 .
 
+## Author
+
+.
+
+**Jérôme LEPAGE**, 49yo, married, 1 step-son
+
+Zabbix Certified Trainer, certified ZCS from 6.0, ZCP from 7.0, ZCE from 7.0, ZCT 7.0 & 8.0
+
+(First zabbix installation 4.2)
+
+
+- Linkedin Profil : [https://www.linkedin.com/in/jerome-lepage/](https://www.linkedin.com/in/jerome-lepage/)
+- Corporate website : [https://www.jlepage.fr](https://www.jlepage.fr)
+- Zabbix Training website : [https://formation.jlepage.fr/](https://formation.jlepage.fr/formation/zabbix/formations-zabbix-l-outil-opensource-de-monitoring)
+- Zabbix blog : [https://www.jlepage.blog](https://www.jlepage.blog)
+
+.
+
 ## Copyrights
 
 .

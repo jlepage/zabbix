@@ -1,6 +1,6 @@
 
 
-#  Zabbix Summit 2025 (Riga, Latvia) - 10 tips to please your IT Manager and keep him away from real stuff
+#  Zabbix Summit 2026 (Riga, Latvia) - 10 tips to please your IT Manager and keep him away from real stuff
 
 ### Abstract
 
