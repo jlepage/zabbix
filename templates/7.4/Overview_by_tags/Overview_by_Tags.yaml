@@ -9,7 +9,7 @@ zabbix_export:
       name: 'Overview by Tags'
       vendor:
         name: jLepage
-        version: 7.4-1
+        version: 7.4-3
       groups:
         - name: Applications
       items:
@@ -72,6 +72,69 @@ zabbix_export:
                   value: pusage
                 - tag: '{{#TAG.KEY}.lowercase()}'
                   value: '{{#TAG.VALUE}.lowercase()}'
+            - uuid: 725716de07664fd8aea5f5cefd3e0bfe
+              name: 'Amount of disk space for {#TAG.KEY} {#TAG.VALUE}'
+              type: CALCULATED
+              key: 'overview.tags.disk.total["{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]'
+              delay: '3h;1d/6-7,00:00-24:00'
+              history: 7d
+              value_type: FLOAT
+              units: B
+              params: |
+                sum(last(//overview.tags.vfs.classic["{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]))
+                +
+                sum(last(//overview.tags.vfs.dependent["{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]))
+              tags:
+                - tag: component
+                  value: disk
+                - tag: type
+                  value: total
+                - tag: '{{#TAG.KEY}.lowercase()}'
+                  value: '{{#TAG.VALUE}.lowercase()}'
+            - uuid: 83881fc41f9f41258ab0699ff05bea26
+              name: 'Usage of disk space for {#TAG.KEY} {#TAG.VALUE} (fs.classic)'
+              type: CALCULATED
+              key: 'overview.tags.disk.usage.classic["{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]'
+              history: 7d
+              value_type: FLOAT
+              units: B
+              params: 'sum(last_foreach(/*/vfs.fs.size[*,used]?[tag="{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]))'
+              preprocessing:
+                - type: CHECK_NOT_SUPPORTED
+                  parameters:
+                    - '0'
+                    - 'no input data'
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: '0'
+              tags:
+                - tag: component
+                  value: disk
+                - tag: type
+                  value: usage
+                - tag: '{{#TAG.KEY}.lowercase()}'
+                  value: '{{#TAG.VALUE}.lowercase()}'
+            - uuid: 3771b324cfca49e689c68f1c13259e15
+              name: 'Usage of disk space for {#TAG.KEY} {#TAG.VALUE} (fs.dependent)'
+              type: CALCULATED
+              key: 'overview.tags.disk.usage.dependent["{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]'
+              history: 7d
+              value_type: FLOAT
+              units: B
+              params: 'sum(last_foreach(/*/vfs.fs.dependent.size[*,used]?[tag="{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]))'
+              preprocessing:
+                - type: CHECK_NOT_SUPPORTED
+                  parameters:
+                    - '0'
+                    - 'no input data'
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: '0'
+              tags:
+                - tag: component
+                  value: disk
+                - tag: type
+                  value: usage
+                - tag: '{{#TAG.KEY}.lowercase()}'
+                  value: '{{#TAG.VALUE}.lowercase()}'
             - uuid: a1b33873b63c4a71874cd79a8e89952d
               name: 'Usage of disk space for {#TAG.KEY} {#TAG.VALUE}'
               type: CALCULATED
@@ -79,7 +142,10 @@ zabbix_export:
               history: 7d
               value_type: FLOAT
               units: B
-              params: 'sum(last_foreach(/*/vfs.fs.dependent.size[*,used]?[tag="{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]))+sum(last_foreach(/*/vfs.fs.size[*,used]?[tag="{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]))'
+              params: |
+                sum(last(//overview.tags.disk.usage.dependent["{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]))
+                +
+                sum(last(//overview.tags.disk.usage.classic["{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]))
               tags:
                 - tag: component
                   value: disk
@@ -149,18 +215,45 @@ zabbix_export:
                   value: usage
                 - tag: '{{#TAG.KEY}.lowercase()}'
                   value: '{{#TAG.VALUE}.lowercase()}'
-            - uuid: 725716de07664fd8aea5f5cefd3e0bfe
-              name: 'Amount of disk space for {#TAG.KEY} {#TAG.VALUE}'
+            - uuid: 6ffb078ae9394b14b14f90f7604b38c7
+              name: 'Amount of disk space for {#TAG.KEY} {#TAG.VALUE} (fs)'
               type: CALCULATED
-              key: 'overview.tags.vfs["{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]'
+              key: 'overview.tags.vfs.classic["{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]'
               delay: '3h;1d/6-7,00:00-24:00'
               history: 7d
               value_type: FLOAT
               units: B
-              params: |
-                sum(last_foreach(/*/vfs.fs.dependent.size[*,total]?[tag="{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]))
-                +
-                sum(last_foreach(/*/vfs.fs.size[*,total]?[tag="{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]))
+              params: 'sum(last_foreach(/*/vfs.fs.size[*,total]?[tag="{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]))'
+              preprocessing:
+                - type: CHECK_NOT_SUPPORTED
+                  parameters:
+                    - '0'
+                    - 'no input data'
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: '0'
+              tags:
+                - tag: component
+                  value: disk
+                - tag: type
+                  value: total
+                - tag: '{{#TAG.KEY}.lowercase()}'
+                  value: '{{#TAG.VALUE}.lowercase()}'
+            - uuid: 6bc6ea46f7e444e8b5a60fd1786983e6
+              name: 'Amount of disk space for {#TAG.KEY} {#TAG.VALUE} (fs.dependent)'
+              type: CALCULATED
+              key: 'overview.tags.vfs.dependent["{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]'
+              delay: '3h;1d/6-7,00:00-24:00'
+              history: 7d
+              value_type: FLOAT
+              units: B
+              params: 'sum(last_foreach(/*/vfs.fs.dependent.size[*,total]?[tag="{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]))'
+              preprocessing:
+                - type: CHECK_NOT_SUPPORTED
+                  parameters:
+                    - '0'
+                    - 'no input data'
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: '0'
               tags:
                 - tag: component
                   value: disk
