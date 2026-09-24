@@ -1,0 +1,11 @@
+{
+  "ovh_endpoint": "ovh-eu",
+  "ovh_app_key": "<OVH APP KEY>",
+  "ovh_app_secret": "<OVH APP SECRET>",
+  "ovh_consumer_key": "<OVH CONSUMER KEY>",
+  "zabbix_url": "https://<ZABBIX_URL>/api_jsonrpc.php",
+  "zabbix_token": "<ZABBIX_API_TOKEN>",
+  "zabbix_host": "<OVH Host>",
+  "item_key": "ovh.cost.raw",
+  "sleep": 0.2
+}

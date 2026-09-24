@@ -1,0 +1,111 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: 846977d1dfed4968bc5f8bdb363285bc
+      name: 'Templates/Operating systems'
+  templates:
+    - uuid: fd9aaf58d13f4bb5a76d15eebc770172
+      template: 'Linux OS version'
+      name: 'Linux OS version'
+      vendor:
+        name: jLepage
+        version: 7.4-2
+      groups:
+        - name: 'Templates/Operating systems'
+      items:
+        - uuid: 4e7d5cff1e51403fb7fe0923a5bc036f
+          name: 'Os Release - Name'
+          type: DEPENDENT
+          key: os.release.name
+          value_type: CHAR
+          preprocessing:
+            - type: REGEX
+              parameters:
+                - '\s+NAME="(.*)"\s+'
+                - \1
+            - type: TRIM
+              parameters:
+                - ' '
+          master_item:
+            key: 'vfs.file.contents["/etc/os-release"]'
+          tags:
+            - tag: os-scope
+              value: name
+        - uuid: 12a42cf30bf8448c8003da0c9bbd9269
+          name: 'Os Release - Pretty name'
+          type: DEPENDENT
+          key: os.release.pretty-name
+          value_type: CHAR
+          inventory_link: OS_SHORT
+          preprocessing:
+            - type: REGEX
+              parameters:
+                - '\s+PRETTY_NAME="(.*)"\s+'
+                - \1
+            - type: TRIM
+              parameters:
+                - ' '
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  // clean Debian and Unbuntu version
+                  var value = value.trim();
+
+                  // Cas Debian : on retire "GNU/Linux" mais on garde le reste (version + nom de code)
+                  if (/^Debian/i.test(value)) {
+                      return value.replace(/\s*GNU\/Linux\s*/i, ' ').replace(/\s+/g, ' ').trim();
+                  }
+
+                  // Cas Ubuntu : on ne garde que "Ubuntu X.Y" (on jette le patch et le "LTS")
+                  if (/^Ubuntu/i.test(value)) {
+                      var m = value.match(/^Ubuntu\s+(\d+\.\d+)/i);
+                      if (m) {
+                          return 'Ubuntu ' + m[1];
+                      }
+                  }
+
+                  // Tous les autres cas (Amazon Linux, RHEL, etc.) : on ne touche à rien
+                  return value;
+          master_item:
+            key: 'vfs.file.contents["/etc/os-release"]'
+          tags:
+            - tag: os-scope
+              value: pretty-name
+        - uuid: 18b21a8397214f13b1707305c27d967b
+          name: 'Os Release - Version'
+          type: DEPENDENT
+          key: os.release.version
+          value_type: CHAR
+          preprocessing:
+            - type: REGEX
+              parameters:
+                - '\s+VERSION="(.*)"\s+'
+                - \1
+            - type: TRIM
+              parameters:
+                - ' '
+          master_item:
+            key: 'vfs.file.contents["/etc/os-release"]'
+          tags:
+            - tag: os-scope
+              value: version
+        - uuid: 54fdfaff33e346dc803f7dbf9d8356fd
+          name: 'Os Release - raw'
+          key: 'vfs.file.contents["/etc/os-release"]'
+          delay: 12h
+          history: '0'
+          value_type: TEXT
+          preprocessing:
+            - type: TRIM
+              parameters:
+                - ' \n\r'
+            - type: JAVASCRIPT
+              parameters:
+                - 'return "-\n" + value + "\n-";'
+            - type: DISCARD_UNCHANGED
+          tags:
+            - tag: component
+              value: raw
+      tags:
+        - tag: component
+          value: system

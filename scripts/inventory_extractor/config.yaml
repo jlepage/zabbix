@@ -1,0 +1,15 @@
+# config.yaml — Connexion Zabbix + sortie + filtres
+# Ne contient AUCUN mapping de champs (voir extraction.yaml pour ça).
+
+zabbix:
+  url: "https://<ZABBIX_URL>/api_jsonrpc.php"
+  # Le token peut être fourni en dur (déconseillé) ou via une variable
+  # d'environnement, résolue automatiquement si la valeur suit le format ${NOM_VAR}.
+  token: "<ZABBIX_API_TOKEN>"
+  validate_certs: true   # false uniquement en environnement de test/interne avec certif auto-signé
+
+output:
+  format: csv        # csv | xlsx
+  path: "exported_hosts.csv"
+
+filters:

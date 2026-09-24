@@ -1,1 +1,6 @@
 .history/
+config.edp.json
+config.jlepage.json
+*.csv
+*.xsl
+*.xslx

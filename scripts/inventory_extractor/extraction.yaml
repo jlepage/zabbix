@@ -1,0 +1,116 @@
+# extraction.yaml
+# Mapping : <champ_zabbix>: <nom_colonne_csv/xlsx>  (ou "excluded" pour désactiver)
+# Règle : deux champs, tous types confondus, ne peuvent pas pointer vers la même colonne.
+
+host_properties:
+  hostid: Id
+  host: Nom              # nom technique de l'host
+  name: excluded                # nom visible
+  description: excluded
+  status: "Statut"              # voir value_labels
+  proxyid: excluded
+  inventory_mode: excluded      # -1=disabled, 0=manual, 1=automatic
+  groups: excluded              # noms des groupes (jointure virgule)
+
+# Optionnel : libellés d'affichage pour host_properties.status, pour éviter
+# de devoir mémoriser que 0=activé et 1=désactivé (contre-intuitif dans
+# l'API Zabbix). Sans cette section, les valeurs brutes 0/1 sont exportées
+# telles quelles. Ne s'applique que si host_properties.status est actif
+# (décommentez les deux blocs ensemble).
+value_labels:
+  status:
+    enable: "Activé"
+    disable: "Désactivé"
+
+inventory_fields:
+  type: excluded
+  type_full: "Ressources"
+  name: excluded                 # "Name" de l'inventaire (distinct de host.name)
+  alias: excluded
+  os: excluded
+  os_full: excluded
+  os_short: "Operating System"
+  serialno_a: excluded
+  serialno_b: excluded
+  tag: excluded
+  asset_tag: excluded
+  macaddress_a: excluded
+  macaddress_b: excluded
+  hardware: excluded
+  hardware_full: excluded
+  software: excluded
+  software_full: excluded
+  software_app_a: excluded
+  software_app_b: excluded
+  software_app_c: excluded
+  software_app_d: excluded
+  software_app_e: excluded
+  contact: excluded
+  location: "Provider"
+  location_lat: Lattitude
+  location_lon: Longitude
+  notes: excluded
+  chassis: excluded
+  model: excluded
+  hw_arch: excluded
+  vendor: excluded
+  contract_number: excluded
+  installer_name: excluded
+  deployment_status: excluded
+  url_a: excluded
+  url_b: excluded
+  url_c: excluded
+  host_networks: excluded
+  host_netmask: excluded
+  host_router: excluded
+  oob_ip: excluded
+  oob_netmask: excluded
+  oob_router: excluded
+  date_hw_purchase: excluded
+  date_hw_install: excluded
+  date_hw_expiry: excluded
+  date_hw_decomm: excluded
+  site_address_a: excluded
+  site_address_b: excluded
+  site_address_c: excluded
+  site_city: "Ville"
+  site_state: excluded
+  site_country: "Pays"
+  site_zip: excluded
+  site_rack: excluded
+  site_notes: excluded
+  poc_1_name: excluded
+  poc_1_email: excluded
+  poc_1_phone_a: excluded
+  poc_1_phone_b: excluded
+  poc_1_cell: excluded
+  poc_1_screen: excluded
+  poc_1_notes: excluded
+  poc_2_name: excluded
+  poc_2_email: excluded
+  poc_2_phone_a: excluded
+  poc_2_phone_b: excluded
+  poc_2_cell: excluded
+  poc_2_screen: excluded
+  poc_2_notes: excluded
+
+# Interfaces réseau. Une colonne par type (jamais de credentials extraits : les
+# éventuelles community strings SNMP / identifiants SNMPv3 ne sont jamais lus).
+# Adresse = ip si useip=1, sinon dns. Port affiché uniquement si non standard
+# (10050=agent, 161=snmp, 623=ipmi, 12345=jmx). Plusieurs interfaces du même
+# type -> jointure virgule.
+interfaces:
+  agent: "Adr. Zabbix"
+  snmp: excluded
+  ipmi: excluded
+  jmx: excluded
+
+# Les tags sont libres (propres à votre organisation) : pas de liste exhaustive
+# possible. Dupliquez la ligne ci-dessous pour chaque tag à extraire.
+# Valeurs multiples pour un même tag -> jointure virgule dans la colonne.
+tags:
+  project: Project
+  provider: Supplier
+  location: Country
+  pop: "Point of Presence"
+  # environment: Environnement
