@@ -4,3 +4,4 @@ config.jlepage.json
 *.csv
 *.xsl
 *.xslx
+__pycache__/
