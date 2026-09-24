@@ -1,0 +1,1665 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: c2c162144c2d4c5491c8801193af4945
+      name: Templates/Cloud
+  host_groups:
+    - uuid: f2481361f99448eea617b7b1d4765566
+      name: 'Discovered hosts'
+    - uuid: 137f19e6e2dc4219b33553b812627bc2
+      name: 'Virtual machines'
+  templates:
+    - uuid: 58b797dc159044aa8b9665c4a465c7d8
+      template: 'OVH by HTTP'
+      name: 'OVH by HTTP'
+      vendor:
+        name: jLepage
+        version: 7.4-2
+      groups:
+        - name: Templates/Cloud
+      items:
+        - uuid: 46c1293b82f943dba0a531f1f6bc725e
+          name: 'OVH Bills amount'
+          type: DEPENDENT
+          key: ovh.cost.bills.amount
+          history: 780d
+          value_type: FLOAT
+          trends: 780d
+          units: €
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.total
+          master_item:
+            key: ovh.cost.raw
+          tags:
+            - tag: cost
+              value: amount
+        - uuid: c8dd86078a5f483f95444cf55bb4116b
+          name: 'OVH costs discovery'
+          type: SCRIPT
+          key: ovh.cost.discovery
+          delay: '6h;1d/6-7,00:00-24:00'
+          history: '0'
+          value_type: TEXT
+          params: |
+            /*
+             * Zabbix master item (Script) - Découverte des SERVICES FACTURABLES OVH
+             *
+             * Rôle : alimenter la LLD "Services facturables" et la LLD dérivée
+             * "Catégories de facturation". Volontairement DÉCOUPLÉ du script de
+             * découverte des hôtes (ovh_resources_discovery.js / existant) :
+             *   - granularité = granularité de facturation OVH (le projet cloud,
+             *     pas l'instance), pas granularité de supervision
+             *   - périmètre = tout ce qui coûte de l'argent, pas seulement ce qui
+             *     est "monitorable" (domaines, NAS-HA inclus)
+             *   - aucune dépendance : une panne ici n'affecte jamais la découverte
+             *     des hôtes, et inversement
+             *
+             * Paramètres attendus dans "value" (JSON) :
+             * {
+             *   "application_key":    "...",
+             *   "application_secret": "...",
+             *   "consumer_key":       "...",
+             *   "endpoint":           "ovh-eu" | "ovh-ca" | "ovh-us",
+             *   "proxy":              "" // optionnel
+             * }
+             *
+             * Sortie :
+             * {
+             *   "errors": "",
+             *   "billing": {
+             *     "value": [
+             *       { "serviceName": "...", "name": "...", "category": "cloud|dedicated|domain|storage" },
+             *       ...
+             *     ]
+             *   }
+             * }
+             *
+             * Consumer key : droits nécessaires (lecture seule)
+             *   GET /cloud/project, GET /cloud/project/*
+             *   GET /vps, GET /vps/*
+             *   GET /dedicated/server, GET /dedicated/server/*
+             *   GET /domain
+             *   GET /dedicated/nasha
+             */
+
+            // --- SHA-1 pur JS (Duktape ne fournit que md5()/sha256() en natif) ---------
+            function sha1(str) {
+            	function rotl(n, s) { return (n << s) | (n >>> (32 - s)); }
+            	function toHex(n) {
+            		var s = '', v;
+            		for (var i = 7; i >= 0; i--) {
+            			v = (n >>> (i * 4)) & 0x0f;
+            			s += v.toString(16);
+            		}
+            		return s;
+            	}
+
+            	str = unescape(encodeURIComponent(str)); // normalisation UTF-8 -> octets
+
+            	var strLen = str.length,
+            		wordArray = [];
+
+            	for (var i = 0; i < strLen - 3; i += 4) {
+            		wordArray.push(
+            			(str.charCodeAt(i) << 24) |
+            			(str.charCodeAt(i + 1) << 16) |
+            			(str.charCodeAt(i + 2) << 8) |
+            			(str.charCodeAt(i + 3))
+            		);
+            	}
+
+            	switch (strLen % 4) {
+            		case 0:
+            			wordArray.push(0x080000000);
+            			break;
+            		case 1:
+            			wordArray.push((str.charCodeAt(strLen - 1) << 24) | 0x0800000);
+            			break;
+            		case 2:
+            			wordArray.push((str.charCodeAt(strLen - 2) << 24) | (str.charCodeAt(strLen - 1) << 16) | 0x08000);
+            			break;
+            		case 3:
+            			wordArray.push((str.charCodeAt(strLen - 3) << 24) | (str.charCodeAt(strLen - 2) << 16) | (str.charCodeAt(strLen - 1) << 8) | 0x80);
+            			break;
+            	}
+
+            	while ((wordArray.length % 16) !== 14) {
+            		wordArray.push(0);
+            	}
+            	wordArray.push(strLen >>> 29);
+            	wordArray.push((strLen << 3) & 0x0ffffffff);
+
+            	var W = new Array(80),
+            		H0 = 0x67452301, H1 = 0xEFCDAB89, H2 = 0x98BADCFE, H3 = 0x10325476, H4 = 0xC3D2E1F0,
+            		A, B, C, D, E, temp;
+
+            	for (var blockstart = 0; blockstart < wordArray.length; blockstart += 16) {
+            		for (var i = 0; i < 16; i++) { W[i] = wordArray[blockstart + i]; }
+            		for (var i = 16; i <= 79; i++) { W[i] = rotl(W[i - 3] ^ W[i - 8] ^ W[i - 14] ^ W[i - 16], 1); }
+
+            		A = H0; B = H1; C = H2; D = H3; E = H4;
+
+            		for (var i = 0; i <= 19; i++) {
+            			temp = (rotl(A, 5) + ((B & C) | (~B & D)) + E + W[i] + 0x5A827999) & 0x0ffffffff;
+            			E = D; D = C; C = rotl(B, 30); B = A; A = temp;
+            		}
+            		for (var i = 20; i <= 39; i++) {
+            			temp = (rotl(A, 5) + (B ^ C ^ D) + E + W[i] + 0x6ED9EBA1) & 0x0ffffffff;
+            			E = D; D = C; C = rotl(B, 30); B = A; A = temp;
+            		}
+            		for (var i = 40; i <= 59; i++) {
+            			temp = (rotl(A, 5) + ((B & C) | (B & D) | (C & D)) + E + W[i] + 0x8F1BBCDC) & 0x0ffffffff;
+            			E = D; D = C; C = rotl(B, 30); B = A; A = temp;
+            		}
+            		for (var i = 60; i <= 79; i++) {
+            			temp = (rotl(A, 5) + (B ^ C ^ D) + E + W[i] + 0xCA62C1D6) & 0x0ffffffff;
+            			E = D; D = C; C = rotl(B, 30); B = A; A = temp;
+            		}
+
+            		H0 = (H0 + A) & 0x0ffffffff;
+            		H1 = (H1 + B) & 0x0ffffffff;
+            		H2 = (H2 + C) & 0x0ffffffff;
+            		H3 = (H3 + D) & 0x0ffffffff;
+            		H4 = (H4 + E) & 0x0ffffffff;
+            	}
+
+            	return toHex(H0) + toHex(H1) + toHex(H2) + toHex(H3) + toHex(H4);
+            }
+
+            // --- Client OVH (une seule instance HttpRequest réutilisée : limite Zabbix
+            //     de 10 instanciations par exécution, aucune limite sur le nombre
+            //     d'appels .get()/.post() sur une même instance) -----------------------
+            var OVH = {
+            	params: {},
+            	base_url: null,
+            	time_diff: 0,
+            	http: null,
+
+            	setParams: function (params) {
+            		['application_key', 'application_secret', 'consumer_key', 'endpoint'].forEach(function (field) {
+            			if (typeof params !== 'object' || typeof params[field] === 'undefined' || params[field] === '') {
+            				throw 'Required param is not set: ' + field + '.';
+            			}
+            		});
+
+            		OVH.params = params;
+
+            		switch (params.endpoint) {
+            			case 'ovh-eu':
+            				OVH.base_url = 'https://eu.api.ovh.com/1.0';
+            				break;
+            			case 'ovh-ca':
+            				OVH.base_url = 'https://ca.api.ovh.com/1.0';
+            				break;
+            			case 'ovh-us':
+            				OVH.base_url = 'https://api.us.ovhcloud.com/1.0';
+            				break;
+            			default:
+            				throw 'Unsupported endpoint: "' + params.endpoint + '". Expected "ovh-eu", "ovh-ca" or "ovh-us".';
+            		}
+
+            		OVH.http = new HttpRequest();
+            		if (typeof params.proxy !== 'undefined' && params.proxy !== '') {
+            			OVH.http.setProxy(params.proxy);
+            		}
+            	},
+
+            	// Synchronisation d'horloge : indispensable, OVH rejette les signatures
+            	// dont le timestamp dérive trop de l'heure serveur. Endpoint non authentifié.
+            	syncTime: function () {
+            		OVH.http.clearHeader();
+            		var response = OVH.http.get(OVH.base_url + '/auth/time');
+
+            		if (OVH.http.getStatus() !== 200 || response === null || response === '') {
+            			throw 'Failed to get OVH server time (status ' + OVH.http.getStatus() + ').';
+            		}
+
+            		OVH.time_diff = parseInt(response, 10) - Math.floor(Date.now() / 1000);
+            	},
+
+            	sign: function (method, url, body) {
+            		var timestamp = Math.floor(Date.now() / 1000) + OVH.time_diff,
+            			to_sign = OVH.params.application_secret + '+' + OVH.params.consumer_key + '+' +
+            				method + '+' + url + '+' + body + '+' + timestamp;
+
+            		return { timestamp: timestamp, signature: '$1$' + sha1(to_sign) };
+            	},
+
+            	request: function (method, path) {
+            		var url = OVH.base_url + path,
+            			signed = OVH.sign(method, url, ''),
+            			response;
+
+            		OVH.http.clearHeader();
+            		OVH.http.addHeader('Content-Type: application/json;charset=utf-8');
+            		OVH.http.addHeader('X-Ovh-Application: ' + OVH.params.application_key);
+            		OVH.http.addHeader('X-Ovh-Consumer: ' + OVH.params.consumer_key);
+            		OVH.http.addHeader('X-Ovh-Timestamp: ' + signed.timestamp);
+            		OVH.http.addHeader('X-Ovh-Signature: ' + signed.signature);
+
+            		Zabbix.log(4, '[ OVH ] Sending request: ' + method + ' ' + url);
+            		response = OVH.http.get(url);
+            		Zabbix.log(4, '[ OVH ] Received response with status code ' + OVH.http.getStatus() + ': ' + response);
+
+            		if (OVH.http.getStatus() === 403) {
+            			throw 'Forbidden (403) on ' + method + ' ' + path + '. Check that the consumer_key access rules ' +
+            				'include BOTH the exact path and the wildcard (e.g. "' + path + '" AND "' + path + '/*"). ' +
+            				'Raw response: ' + response;
+            		}
+
+            		if (OVH.http.getStatus() !== 200 || response === null) {
+            			throw 'Request failed with status code ' + OVH.http.getStatus() + ': ' + response;
+            		}
+
+            		try {
+            			return JSON.parse(response);
+            		}
+            		catch (error) {
+            			throw 'Failed to parse response received from API for ' + path + '.';
+            		}
+            	}
+            };
+
+            var data = { errors: {}, billing: { value: [] } };
+
+            try {
+            	OVH.setParams(JSON.parse(value));
+            	OVH.syncTime();
+            }
+            catch (error) {
+            	data.errors.auth = error.toString();
+            }
+
+            if (!('auth' in data.errors)) {
+
+            	// --- 1. Public Cloud : granularité PROJET (= granularité de facturation
+            	//        OVH ; jamais l'instance, contrairement au script de découverte
+            	//        des hôtes). Aucune descente dans /instance ici. -----------------
+            	try {
+            		var projects = OVH.request('GET', '/cloud/project');
+
+            		projects.forEach(function (project_id) {
+            			var project_name = project_id;
+            			try {
+            				var project_info = OVH.request('GET', '/cloud/project/' + encodeURIComponent(project_id));
+            				if (project_info && project_info.description) {
+            					project_name = project_info.description;
+            				}
+            			}
+            			catch (project_error) {
+            				Zabbix.log(3, '[ OVH ] Cannot fetch project description for ' + project_id + ': ' + project_error);
+            			}
+
+            			data.billing.value.push({ serviceName: project_id, name: project_name, category: 'cloud' });
+            		});
+            	}
+            	catch (error) {
+            		data.errors.cloud = error.toString();
+            	}
+
+            	// --- 2. VPS ---------------------------------------------------------------
+            	try {
+            		var vps_list = OVH.request('GET', '/vps');
+
+            		vps_list.forEach(function (service_name) {
+            			var vps_name = service_name;
+            			try {
+            				var vps = OVH.request('GET', '/vps/' + encodeURIComponent(service_name));
+            				vps_name = vps.displayName || service_name;
+            			}
+            			catch (vps_error) {
+            				Zabbix.log(3, '[ OVH ] Cannot fetch VPS details for ' + service_name + ': ' + vps_error);
+            			}
+
+            			data.billing.value.push({ serviceName: service_name, name: vps_name, category: 'cloud' });
+            		});
+            	}
+            	catch (error) {
+            		data.errors.vps = error.toString();
+            	}
+
+            	// --- 3. Serveurs dédiés (bare metal) --------------------------------------
+            	try {
+            		var dedicated_list = OVH.request('GET', '/dedicated/server');
+
+            		dedicated_list.forEach(function (service_name) {
+            			var server_name = service_name;
+            			try {
+            				var server = OVH.request('GET', '/dedicated/server/' + encodeURIComponent(service_name));
+            				server_name = server.reverse || service_name;
+            			}
+            			catch (server_error) {
+            				Zabbix.log(3, '[ OVH ] Cannot fetch dedicated server details for ' + service_name + ': ' + server_error);
+            			}
+
+            			data.billing.value.push({ serviceName: service_name, name: server_name, category: 'dedicated' });
+            		});
+            	}
+            	catch (error) {
+            		data.errors.dedicated = error.toString();
+            	}
+
+            	// --- 4. Domaines : liste directe, le nom de domaine EST le libellé -------
+            	//        lisible, aucun appel de détail nécessaire.
+            	try {
+            		var domain_list = OVH.request('GET', '/domain');
+
+            		domain_list.forEach(function (domain_name) {
+            			data.billing.value.push({ serviceName: domain_name, name: domain_name, category: 'domain' });
+            		});
+            	}
+            	catch (error) {
+            		data.errors.domain = error.toString();
+            	}
+
+            	// --- 5. NAS-HA : liste directe également — pas de champ de libellé --------
+            	//        distinct du serviceName côté API OVH.
+            	try {
+            		var nasha_list = OVH.request('GET', '/dedicated/nasha');
+
+            		nasha_list.forEach(function (service_name) {
+            			data.billing.value.push({ serviceName: service_name, name: service_name, category: 'storage' });
+            		});
+            	}
+            	catch (error) {
+            		data.errors.nasha = error.toString();
+            	}
+            }
+
+            if (Object.keys(data.errors).length !== 0) {
+            	var errors = 'Failed to receive data:';
+            	for (var error_key in data.errors) {
+            		errors += '\n' + error_key + ' : ' + data.errors[error_key];
+            	}
+            	data.errors = errors;
+            }
+            else {
+            	data.errors = '';
+            }
+
+            return JSON.stringify(data);
+          timeout: 15s
+          parameters:
+            - name: application_key
+              value: '{$OVH.APP_ID}'
+            - name: application_secret
+              value: '{$OVH.APP_SECRET}'
+            - name: consumer_key
+              value: '{$OVH.CONSUMER_KEY}'
+            - name: endpoint
+              value: '{$OVH.ENDPOINT}'
+            - name: proxy
+              value: '{$OVH.PROXY}'
+          tags:
+            - tag: component
+              value: discovery
+            - tag: provider
+              value: ovh
+            - tag: scope
+              value: cost
+        - uuid: c1eaef6c11584aa1bb35de25547e33c5
+          name: 'OVH 3 months forecast'
+          type: CALCULATED
+          key: 'ovh.cost.forecast.months[3]'
+          delay: '1h;0/6-7,00:00-24:00'
+          history: 780d
+          value_type: FLOAT
+          trends: 780d
+          units: €
+          params: 'forecast(//ovh.cost.bills.amount,180d,90d,"linear","max")'
+        - uuid: ed0738a5b2a44a1492b6ec2fb9a98995
+          name: 'OVH 6 months forecast'
+          type: CALCULATED
+          key: 'ovh.cost.forecast.months[6]'
+          delay: '1h;0/6-7,00:00-24:00'
+          history: 780d
+          value_type: FLOAT
+          trends: 780d
+          units: €
+          params: 'forecast(//ovh.cost.bills.amount,180d,180d,"linear","max")'
+        - uuid: 0d9ccad844254db8a11ea632f1d9deb8
+          name: 'OVH get costs data (script)'
+          type: SCRIPT
+          key: ovh.cost.raw
+          delay: '6h;1d/6-7,00:00-24:00'
+          history: '0'
+          value_type: TEXT
+          params: |
+            /*
+             * Zabbix master item (Script) - Collecte de la FACTURATION OVH (mois en cours)
+             *
+             * Rôle : interroger /me/bill pour la période en cours et retourner un JSON
+             * "sparse" (uniquement ce qui a été effectivement facturé). Ne connaît RIEN
+             * des noms/catégories de service : cette responsabilité vit entièrement dans
+             * ovh_billing_discovery.js. Les deux scripts sont indépendants, ne partagent
+             * aucun état, et ne tombent jamais en panne ensemble pour la même raison.
+             *
+             * Paramètres attendus dans "value" (JSON) : identiques à
+             * ovh_billing_discovery.js (application_key, application_secret,
+             * consumer_key, endpoint, proxy optionnel).
+             *
+             * Sortie :
+             * {
+             *   "errors": "",
+             *   "meta": {
+             *     "period": "2026-09",
+             *     "period_start": "2026-09-01",
+             *     "period_end": "2026-09-16",
+             *     "currency": "EUR"
+             *   },
+             *   "total": 313.08,
+             *   "services": [
+             *     { "id": "2ae493a69292437db9f6fe7e27bf45bf", "amount": 193.19 },
+             *     { "id": "ekalys.net", "amount": 119.88 }
+             *   ]
+             * }
+             *
+             * Consumer key : droit nécessaire (lecture seule)
+             *   GET /me/bill, GET /me/bill/*
+             */
+
+            // --- SHA-1 pur JS (identique à ovh_billing_discovery.js) -------------------
+            function sha1(str) {
+            	function rotl(n, s) { return (n << s) | (n >>> (32 - s)); }
+            	function toHex(n) {
+            		var s = '', v;
+            		for (var i = 7; i >= 0; i--) {
+            			v = (n >>> (i * 4)) & 0x0f;
+            			s += v.toString(16);
+            		}
+            		return s;
+            	}
+
+            	str = unescape(encodeURIComponent(str));
+
+            	var strLen = str.length,
+            		wordArray = [];
+
+            	for (var i = 0; i < strLen - 3; i += 4) {
+            		wordArray.push(
+            			(str.charCodeAt(i) << 24) |
+            			(str.charCodeAt(i + 1) << 16) |
+            			(str.charCodeAt(i + 2) << 8) |
+            			(str.charCodeAt(i + 3))
+            		);
+            	}
+
+            	switch (strLen % 4) {
+            		case 0:
+            			wordArray.push(0x080000000);
+            			break;
+            		case 1:
+            			wordArray.push((str.charCodeAt(strLen - 1) << 24) | 0x0800000);
+            			break;
+            		case 2:
+            			wordArray.push((str.charCodeAt(strLen - 2) << 24) | (str.charCodeAt(strLen - 1) << 16) | 0x08000);
+            			break;
+            		case 3:
+            			wordArray.push((str.charCodeAt(strLen - 3) << 24) | (str.charCodeAt(strLen - 2) << 16) | (str.charCodeAt(strLen - 1) << 8) | 0x80);
+            			break;
+            	}
+
+            	while ((wordArray.length % 16) !== 14) {
+            		wordArray.push(0);
+            	}
+            	wordArray.push(strLen >>> 29);
+            	wordArray.push((strLen << 3) & 0x0ffffffff);
+
+            	var W = new Array(80),
+            		H0 = 0x67452301, H1 = 0xEFCDAB89, H2 = 0x98BADCFE, H3 = 0x10325476, H4 = 0xC3D2E1F0,
+            		A, B, C, D, E, temp;
+
+            	for (var blockstart = 0; blockstart < wordArray.length; blockstart += 16) {
+            		for (var i = 0; i < 16; i++) { W[i] = wordArray[blockstart + i]; }
+            		for (var i = 16; i <= 79; i++) { W[i] = rotl(W[i - 3] ^ W[i - 8] ^ W[i - 14] ^ W[i - 16], 1); }
+
+            		A = H0; B = H1; C = H2; D = H3; E = H4;
+
+            		for (var i = 0; i <= 19; i++) {
+            			temp = (rotl(A, 5) + ((B & C) | (~B & D)) + E + W[i] + 0x5A827999) & 0x0ffffffff;
+            			E = D; D = C; C = rotl(B, 30); B = A; A = temp;
+            		}
+            		for (var i = 20; i <= 39; i++) {
+            			temp = (rotl(A, 5) + (B ^ C ^ D) + E + W[i] + 0x6ED9EBA1) & 0x0ffffffff;
+            			E = D; D = C; C = rotl(B, 30); B = A; A = temp;
+            		}
+            		for (var i = 40; i <= 59; i++) {
+            			temp = (rotl(A, 5) + ((B & C) | (B & D) | (C & D)) + E + W[i] + 0x8F1BBCDC) & 0x0ffffffff;
+            			E = D; D = C; C = rotl(B, 30); B = A; A = temp;
+            		}
+            		for (var i = 60; i <= 79; i++) {
+            			temp = (rotl(A, 5) + (B ^ C ^ D) + E + W[i] + 0xCA62C1D6) & 0x0ffffffff;
+            			E = D; D = C; C = rotl(B, 30); B = A; A = temp;
+            		}
+
+            		H0 = (H0 + A) & 0x0ffffffff;
+            		H1 = (H1 + B) & 0x0ffffffff;
+            		H2 = (H2 + C) & 0x0ffffffff;
+            		H3 = (H3 + D) & 0x0ffffffff;
+            		H4 = (H4 + E) & 0x0ffffffff;
+            	}
+
+            	return toHex(H0) + toHex(H1) + toHex(H2) + toHex(H3) + toHex(H4);
+            }
+
+            // --- Client OVH --------------------------------------------------------------
+            var OVH = {
+            	params: {},
+            	base_url: null,
+            	time_diff: 0,
+            	http: null,
+
+            	setParams: function (params) {
+            		['application_key', 'application_secret', 'consumer_key', 'endpoint'].forEach(function (field) {
+            			if (typeof params !== 'object' || typeof params[field] === 'undefined' || params[field] === '') {
+            				throw 'Required param is not set: ' + field + '.';
+            			}
+            		});
+
+            		OVH.params = params;
+
+            		switch (params.endpoint) {
+            			case 'ovh-eu':
+            				OVH.base_url = 'https://eu.api.ovh.com/1.0';
+            				break;
+            			case 'ovh-ca':
+            				OVH.base_url = 'https://ca.api.ovh.com/1.0';
+            				break;
+            			case 'ovh-us':
+            				OVH.base_url = 'https://api.us.ovhcloud.com/1.0';
+            				break;
+            			default:
+            				throw 'Unsupported endpoint: "' + params.endpoint + '". Expected "ovh-eu", "ovh-ca" or "ovh-us".';
+            		}
+
+            		OVH.http = new HttpRequest();
+            		if (typeof params.proxy !== 'undefined' && params.proxy !== '') {
+            			OVH.http.setProxy(params.proxy);
+            		}
+            	},
+
+            	syncTime: function () {
+            		OVH.http.clearHeader();
+            		var response = OVH.http.get(OVH.base_url + '/auth/time');
+
+            		if (OVH.http.getStatus() !== 200 || response === null || response === '') {
+            			throw 'Failed to get OVH server time (status ' + OVH.http.getStatus() + ').';
+            		}
+
+            		OVH.time_diff = parseInt(response, 10) - Math.floor(Date.now() / 1000);
+            	},
+
+            	sign: function (method, url, body) {
+            		var timestamp = Math.floor(Date.now() / 1000) + OVH.time_diff,
+            			to_sign = OVH.params.application_secret + '+' + OVH.params.consumer_key + '+' +
+            				method + '+' + url + '+' + body + '+' + timestamp;
+
+            		return { timestamp: timestamp, signature: '$1$' + sha1(to_sign) };
+            	},
+
+            	request: function (method, path, query) {
+            		var url = OVH.base_url + path + (query ? '?' + query : ''),
+            			signed = OVH.sign(method, url, ''),
+            			response;
+
+            		OVH.http.clearHeader();
+            		OVH.http.addHeader('Content-Type: application/json;charset=utf-8');
+            		OVH.http.addHeader('X-Ovh-Application: ' + OVH.params.application_key);
+            		OVH.http.addHeader('X-Ovh-Consumer: ' + OVH.params.consumer_key);
+            		OVH.http.addHeader('X-Ovh-Timestamp: ' + signed.timestamp);
+            		OVH.http.addHeader('X-Ovh-Signature: ' + signed.signature);
+
+            		Zabbix.log(4, '[ OVH ] Sending request: ' + method + ' ' + url);
+            		response = OVH.http.get(url);
+            		Zabbix.log(4, '[ OVH ] Received response with status code ' + OVH.http.getStatus() + ': ' + response);
+
+            		if (OVH.http.getStatus() === 403) {
+            			throw 'Forbidden (403) on ' + method + ' ' + path + '. Check that the consumer_key access rules ' +
+            				'include BOTH the exact path and the wildcard (e.g. "' + path + '" AND "' + path + '/*"). ' +
+            				'Raw response: ' + response;
+            		}
+
+            		if (OVH.http.getStatus() !== 200 || response === null) {
+            			throw 'Request failed with status code ' + OVH.http.getStatus() + ': ' + response;
+            		}
+
+            		try {
+            			return JSON.parse(response);
+            		}
+            		catch (error) {
+            			throw 'Failed to parse response received from API for ' + path + '.';
+            		}
+            	}
+            };
+
+            var data = {
+            	errors: {},
+            	meta: { period: '', period_start: '', period_end: '', currency: '' },
+            	total: 0,
+            	services: []
+            };
+
+            try {
+            	OVH.setParams(JSON.parse(value));
+            	OVH.syncTime();
+
+            	// Bornes du mois en cours (UTC)
+            	var now = new Date(),
+            		period_start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
+            		from = period_start.toISOString().slice(0, 10),
+            		to = now.toISOString().slice(0, 10);
+
+            	data.meta.period = from.slice(0, 7);
+            	data.meta.period_start = from;
+            	data.meta.period_end = to;
+
+            	var bill_ids = OVH.request('GET', '/me/bill', 'date.from=' + from + '&date.to=' + to);
+
+            	// Agrégation par service : une même ligne "domain" peut apparaître sur
+            	// plusieurs factures du mois (ex. facture normale + avoir).
+            	var amounts_by_service = {};
+
+            	var start_time = Date.now();
+
+            	bill_ids.forEach(function (billId) {
+            		try {
+            			// L'en-tête de facture (devise) n'est lu qu'une seule fois : elle
+            			// ne varie pas d'une facture à l'autre sur un même compte.
+            			if (data.meta.currency === '') {
+            				var bill = OVH.request('GET', '/me/bill/' + encodeURIComponent(billId));
+            				data.meta.currency = bill.priceWithTax.currencyCode;
+            			}
+
+            			var detail_ids = OVH.request('GET', '/me/bill/' + encodeURIComponent(billId) + '/details');
+
+            			detail_ids.forEach(function (detailId) {
+            				var line = OVH.request('GET', '/me/bill/' + encodeURIComponent(billId) + '/details/' + encodeURIComponent(detailId)),
+            					amount = line.totalPrice.value,
+            					service_id = line.domain || 'unknown';
+
+            				amounts_by_service[service_id] = (amounts_by_service[service_id] || 0) + amount;
+            			});
+            		}
+            		catch (error) {
+            			data.errors['bill_' + billId] = error.toString();
+            		}
+            	});
+
+            	// Montants à 0€ exclus (bruit), négatifs conservés (avoirs réels).
+            	for (var service_id in amounts_by_service) {
+            		var amount = Math.round(amounts_by_service[service_id] * 100) / 100;
+            		if (amount !== 0) {
+            			data.services.push({ id: service_id, amount: amount });
+            			data.total += amount;
+            		}
+            	}
+            	data.total = Math.round(data.total * 100) / 100;
+
+            	Zabbix.log(4, '[ OVH ] Billing collection finished in ' + (Date.now() - start_time) + ' ms for ' +
+            		bill_ids.length + ' bill(s).');
+            }
+            catch (error) {
+            	data.errors.auth = error.toString();
+            }
+
+            if (Object.keys(data.errors).length !== 0) {
+            	var errors = 'Failed to receive data:';
+            	for (var error_key in data.errors) {
+            		errors += '\n' + error_key + ' : ' + data.errors[error_key];
+            	}
+            	data.errors = errors;
+            }
+            else {
+            	data.errors = '';
+            }
+
+            return JSON.stringify(data);
+          timeout: 180s
+          parameters:
+            - name: application_key
+              value: '{$OVH.APP_ID}'
+            - name: application_secret
+              value: '{$OVH.APP_SECRET}'
+            - name: consumer_key
+              value: '{$OVH.CONSUMER_KEY}'
+            - name: endpoint
+              value: '{$OVH.ENDPOINT}'
+            - name: proxy
+              value: '{$OVH.PROXY}'
+          tags:
+            - tag: component
+              value: raw
+            - tag: provider
+              value: ovh
+            - tag: scope
+              value: cost
+        - uuid: 8f0b57ad95ce499aa0c1e283369b9d6d
+          name: 'OVH get costs data (trapper)'
+          type: TRAP
+          key: ovh.cost.raw.recovery
+          history: '0'
+          value_type: TEXT
+          status: DISABLED
+          tags:
+            - tag: component
+              value: raw
+            - tag: provider
+              value: ovh
+            - tag: scope
+              value: cost
+        - uuid: ca17bdb2b9174974b311b0411ac7a139
+          name: 'OVH servers discovery'
+          type: SCRIPT
+          key: ovh.servers.raw
+          delay: 1h
+          history: '0'
+          value_type: TEXT
+          status: DISABLED
+          params: |
+            /*
+             * Zabbix master item (JavaScript / HTTP Agent) - Découverte des ressources OVH
+             * Couvre : Public Cloud (instances), VPS, Serveurs dédiés (bare metal)
+             *
+             * Paramètres attendus dans "value" (JSON) :
+             * {
+             *   "application_key":    "...",
+             *   "application_secret": "...",
+             *   "consumer_key":       "...",
+             *   "endpoint":           "ovh-eu" | "ovh-ca" | "ovh-us",
+             *   "proxy":              "" // optionnel
+             * }
+             *
+             * Sortie : { errors: "", resources: { value: [ {resourceType, serviceName, ...}, ... ] } }
+             * -> Alimente une règle LLD unique, filtrée par macro {#RESOURCETYPE} pour les 3 prototypes d'items.
+             */
+
+            // --- SHA-1 pur JS (Duktape ne fournit que md5()/sha256() en natif) ---------
+            function sha1(str) {
+            	function rotl(n, s) { return (n << s) | (n >>> (32 - s)); }
+            	function toHex(n) {
+            		var s = '', v;
+            		for (var i = 7; i >= 0; i--) {
+            			v = (n >>> (i * 4)) & 0x0f;
+            			s += v.toString(16);
+            		}
+            		return s;
+            	}
+
+            	str = unescape(encodeURIComponent(str)); // normalisation UTF-8 -> octets
+
+            	var strLen = str.length,
+            		wordArray = [];
+
+            	for (var i = 0; i < strLen - 3; i += 4) {
+            		wordArray.push(
+            			(str.charCodeAt(i) << 24) |
+            			(str.charCodeAt(i + 1) << 16) |
+            			(str.charCodeAt(i + 2) << 8) |
+            			(str.charCodeAt(i + 3))
+            		);
+            	}
+
+            	switch (strLen % 4) {
+            		case 0:
+            			wordArray.push(0x080000000);
+            			break;
+            		case 1:
+            			wordArray.push((str.charCodeAt(strLen - 1) << 24) | 0x0800000);
+            			break;
+            		case 2:
+            			wordArray.push((str.charCodeAt(strLen - 2) << 24) | (str.charCodeAt(strLen - 1) << 16) | 0x08000);
+            			break;
+            		case 3:
+            			wordArray.push((str.charCodeAt(strLen - 3) << 24) | (str.charCodeAt(strLen - 2) << 16) | (str.charCodeAt(strLen - 1) << 8) | 0x80);
+            			break;
+            	}
+
+            	while ((wordArray.length % 16) !== 14) {
+            		wordArray.push(0);
+            	}
+            	wordArray.push(strLen >>> 29);
+            	wordArray.push((strLen << 3) & 0x0ffffffff);
+
+            	var W = new Array(80),
+            		H0 = 0x67452301, H1 = 0xEFCDAB89, H2 = 0x98BADCFE, H3 = 0x10325476, H4 = 0xC3D2E1F0,
+            		A, B, C, D, E, temp;
+
+            	for (var blockstart = 0; blockstart < wordArray.length; blockstart += 16) {
+            		for (var i = 0; i < 16; i++) { W[i] = wordArray[blockstart + i]; }
+            		for (var i = 16; i <= 79; i++) { W[i] = rotl(W[i - 3] ^ W[i - 8] ^ W[i - 14] ^ W[i - 16], 1); }
+
+            		A = H0; B = H1; C = H2; D = H3; E = H4;
+
+            		for (var i = 0; i <= 19; i++) {
+            			temp = (rotl(A, 5) + ((B & C) | (~B & D)) + E + W[i] + 0x5A827999) & 0x0ffffffff;
+            			E = D; D = C; C = rotl(B, 30); B = A; A = temp;
+            		}
+            		for (var i = 20; i <= 39; i++) {
+            			temp = (rotl(A, 5) + (B ^ C ^ D) + E + W[i] + 0x6ED9EBA1) & 0x0ffffffff;
+            			E = D; D = C; C = rotl(B, 30); B = A; A = temp;
+            		}
+            		for (var i = 40; i <= 59; i++) {
+            			temp = (rotl(A, 5) + ((B & C) | (B & D) | (C & D)) + E + W[i] + 0x8F1BBCDC) & 0x0ffffffff;
+            			E = D; D = C; C = rotl(B, 30); B = A; A = temp;
+            		}
+            		for (var i = 60; i <= 79; i++) {
+            			temp = (rotl(A, 5) + (B ^ C ^ D) + E + W[i] + 0xCA62C1D6) & 0x0ffffffff;
+            			E = D; D = C; C = rotl(B, 30); B = A; A = temp;
+            		}
+
+            		H0 = (H0 + A) & 0x0ffffffff;
+            		H1 = (H1 + B) & 0x0ffffffff;
+            		H2 = (H2 + C) & 0x0ffffffff;
+            		H3 = (H3 + D) & 0x0ffffffff;
+            		H4 = (H4 + E) & 0x0ffffffff;
+            	}
+
+            	return toHex(H0) + toHex(H1) + toHex(H2) + toHex(H3) + toHex(H4);
+            }
+
+            // --- Client OVH -------------------------------------------------------------
+            var OVH = {
+            	params: {},
+            	base_url: null,
+            	time_diff: 0,
+
+            	setParams: function (params) {
+            		['application_key', 'application_secret', 'consumer_key', 'endpoint'].forEach(function (field) {
+            			if (typeof params !== 'object' || typeof params[field] === 'undefined' || params[field] === '') {
+            				throw 'Required param is not set: ' + field + '.';
+            			}
+            		});
+
+            		OVH.params = params;
+
+            		switch (params.endpoint) {
+            			case 'ovh-eu':
+            				OVH.base_url = 'https://eu.api.ovh.com/1.0';
+            				break;
+            			case 'ovh-ca':
+            				OVH.base_url = 'https://ca.api.ovh.com/1.0';
+            				break;
+            			case 'ovh-us':
+            				OVH.base_url = 'https://api.us.ovhcloud.com/1.0';
+            				break;
+            			default:
+            				throw 'Unsupported endpoint: "' + params.endpoint + '". Expected "ovh-eu", "ovh-ca" or "ovh-us".';
+            		}
+            	},
+
+            	// Synchronisation d'horloge : indispensable, OVH rejette les signatures
+            	// dont le timestamp dérive trop de l'heure serveur. Endpoint non authentifié.
+            	syncTime: function () {
+            		var request = new HttpRequest();
+            		if (typeof OVH.params.proxy !== 'undefined' && OVH.params.proxy !== '') {
+            			request.setProxy(OVH.params.proxy);
+            		}
+
+            		var response = request.get(OVH.base_url + '/auth/time');
+
+            		if (request.getStatus() !== 200 || response === null || response === '') {
+            			throw 'Failed to get OVH server time (status ' + request.getStatus() + ').';
+            		}
+
+            		OVH.time_diff = parseInt(response, 10) - Math.floor(Date.now() / 1000);
+            	},
+
+            	sign: function (method, url, body) {
+            		var timestamp = Math.floor(Date.now() / 1000) + OVH.time_diff,
+            			to_sign = OVH.params.application_secret + '+' + OVH.params.consumer_key + '+' +
+            				method + '+' + url + '+' + body + '+' + timestamp;
+
+            		return { timestamp: timestamp, signature: '$1$' + sha1(to_sign) };
+            	},
+
+            	request: function (method, path, data) {
+            		if (typeof data === 'undefined' || data === null) {
+            			data = '';
+            		}
+
+            		var url = OVH.base_url + path,
+            			signed = OVH.sign(method, url, data),
+            			request = new HttpRequest(),
+            			response;
+
+            		if (typeof OVH.params.proxy !== 'undefined' && OVH.params.proxy !== '') {
+            			request.setProxy(OVH.params.proxy);
+            		}
+
+            		request.addHeader('Content-Type: application/json;charset=utf-8');
+            		request.addHeader('X-Ovh-Application: ' + OVH.params.application_key);
+            		request.addHeader('X-Ovh-Consumer: ' + OVH.params.consumer_key);
+            		request.addHeader('X-Ovh-Timestamp: ' + signed.timestamp);
+            		request.addHeader('X-Ovh-Signature: ' + signed.signature);
+
+            		Zabbix.log(4, '[ OVH ] Sending request: ' + method + ' ' + url);
+
+            		if (method === 'POST') {
+            			response = request.post(url, data);
+            		}
+            		else if (method === 'PUT') {
+            			response = request.put(url, data);
+            		}
+            		else {
+            			response = request.get(url);
+            		}
+
+            		Zabbix.log(4, '[ OVH ] Received response with status code ' + request.getStatus() + ': ' + response);
+
+            		if (request.getStatus() === 403) {
+            			throw 'Forbidden (403) on ' + method + ' ' + path + '. Check that the consumer_key access rules ' +
+            				'include BOTH the exact path and the wildcard (e.g. "' + path + '" AND "' + path + '/*"), ' +
+            				'not just one of the two. Raw response: ' + response;
+            		}
+
+            		if (request.getStatus() !== 200 || response === null) {
+            			throw 'Request failed with status code ' + request.getStatus() + ': ' + response;
+            		}
+
+            		try {
+            			return JSON.parse(response);
+            		}
+            		catch (error) {
+            			throw 'Failed to parse response received from API.';
+            		}
+            	},
+
+            	// Helper de normalisation pour la LLD : un format plat commun aux 3 familles.
+            	// "extra" (optionnel) permet d'ajouter des champs racine spécifiques à une
+            	// famille (ex. projectId/projectName pour Public Cloud) sans jamais les
+            	// concaténer dans serviceName ('/' est interdit dans les macros LLD Zabbix).
+            	pushResource: function (list, resourceType, serviceName, name, status, location, raw, extra) {
+            		var item = {
+            			resourceType: resourceType,   // PUBLICCLOUD_INSTANCE | VPS | DEDICATED_SERVER
+            			serviceName: serviceName,     // identifiant OVH natif (jamais composite)
+            			name: name,
+            			status: status,
+            			location: location,
+            			raw: raw
+            		};
+
+            		if (typeof extra === 'object' && extra !== null) {
+            			for (var key in extra) {
+            				item[key] = extra[key];
+            			}
+            		}
+
+            		list.push(item);
+            	}
+            };
+
+            var result,
+            	data = { errors: {}, resources: { value: [] } };
+
+            try {
+            	OVH.setParams(JSON.parse(value));
+            	OVH.syncTime();
+            }
+            catch (error) {
+            	data.errors.auth = error.toString();
+            }
+
+            if (!('auth' in data.errors)) {
+
+            	// --- 1. Public Cloud : projets -> instances ---------------------------
+            	try {
+            		var projects = OVH.request('GET', '/cloud/project');
+
+            		projects.forEach(function (project_id) {
+            			// Récupération du libellé du projet (champ "description" côté OVH) :
+            			// si l'appel échoue (ex. permission manquante sur le chemin exact
+            			// /cloud/project/{serviceName}), on retombe sur l'id brut plutôt
+            			// que de faire échouer toute la famille de ressources.
+            			var project_name = project_id;
+            			try {
+            				var project_info = OVH.request('GET', '/cloud/project/' + encodeURIComponent(project_id));
+            				if (project_info && project_info.description) {
+            					project_name = project_info.description;
+            				}
+            			}
+            			catch (project_error) {
+            				Zabbix.log(3, '[ OVH ] Cannot fetch project description for ' + project_id + ': ' + project_error);
+            			}
+
+            			var instances = OVH.request('GET', '/cloud/project/' + encodeURIComponent(project_id) + '/instance');
+
+            			instances.forEach(function (instance) {
+            				OVH.pushResource(
+            					data.resources.value,
+            					'PUBLICCLOUD_INSTANCE',
+            					instance.id,        // id natif de la VM, jamais composite
+            					instance.name,
+            					instance.status,
+            					instance.region,
+            					instance,
+            					{ projectId: project_id, projectName: project_name }
+            				);
+            			});
+            		});
+            	}
+            	catch (error) {
+            		data.errors.publiccloud = error.toString();
+            	}
+
+            	// --- 2. VPS -------------------------------------------------------------
+            	try {
+            		var vps_list = OVH.request('GET', '/vps');
+
+            		vps_list.forEach(function (service_name) {
+            			var vps = OVH.request('GET', '/vps/' + encodeURIComponent(service_name));
+
+            			OVH.pushResource(
+            				data.resources.value,
+            				'VPS',
+            				service_name,
+            				vps.displayName || service_name,
+            				vps.state,
+            				vps.zone,
+            				vps
+            			);
+            		});
+            	}
+            	catch (error) {
+            		data.errors.vps = error.toString();
+            	}
+
+            	// --- 3. Serveurs dédiés (bare metal) -------------------------------------
+            	try {
+            		var dedicated_list = OVH.request('GET', '/dedicated/server');
+
+            		dedicated_list.forEach(function (service_name) {
+            			var server = OVH.request('GET', '/dedicated/server/' + encodeURIComponent(service_name));
+
+            			OVH.pushResource(
+            				data.resources.value,
+            				'DEDICATED_SERVER',
+            				service_name,
+            				server.reverse || service_name,
+            				server.state,
+            				server.datacenter,
+            				server
+            			);
+            		});
+            	}
+            	catch (error) {
+            		data.errors.dedicated = error.toString();
+            	}
+            }
+
+            if (Object.keys(data.errors).length !== 0) {
+            	var errors = 'Failed to receive data:';
+            	for (var error in data.errors) {
+            		errors += '\n' + error + ' : ' + data.errors[error];
+            	}
+            	data.errors = errors;
+            }
+            else {
+            	data.errors = '';
+            }
+
+            return JSON.stringify(data);
+          timeout: 15s
+          parameters:
+            - name: application_key
+              value: '{$OVH.APP_ID}'
+            - name: application_secret
+              value: '{$OVH.APP_SECRET}'
+            - name: consumer_key
+              value: '{$OVH.CONSUMER_KEY}'
+            - name: endpoint
+              value: '{$OVH.ENDPOINT}'
+            - name: proxy
+              value: '{$OVH.PROXY}'
+          tags:
+            - tag: component
+              value: raw
+            - tag: provider
+              value: ovh
+            - tag: scope
+              value: monitoring
+      discovery_rules:
+        - uuid: 017f01416e3245cda40acd5971b1c6ba
+          name: 'OVH cost categories discovery'
+          type: DEPENDENT
+          key: ovh.cost.categories.discovery
+          lifetime: 4w
+          item_prototypes:
+            - uuid: 7c2ce7ce558045358a3b0693a64914dd
+              name: 'Category cost : {#SERVICE.CATEGORY}'
+              type: CALCULATED
+              key: 'ovh.billing.category.total[{#SERVICE.CATEGORY}]'
+              delay: '3h;12h/6-7,00:00-24:00'
+              history: 730d
+              value_type: FLOAT
+              trends: 730d
+              units: €
+              params: 'sum(last_foreach(/*/ovh.billing.service.cost[*]?[tag="category:{#SERVICE.CATEGORY}"]))'
+              tags:
+                - tag: category
+                  value: '{#SERVICE.CATEGORY}'
+                - tag: cost
+                  value: aggregation
+          master_item:
+            key: ovh.cost.discovery
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value), seen = {}, lld = [];
+                  data.billing.value.forEach(function (s) {
+                  	if (!seen[s.category]) {
+                  		seen[s.category] = true;
+                  		lld.push({ '{#SERVICE.CATEGORY}': s.category });
+                  	}
+                  });
+                  return JSON.stringify(lld);
+        - uuid: 6fc00a5b06c64f8c9600ac8e49764a01
+          name: 'OVH cost services discovery'
+          type: DEPENDENT
+          key: ovh.cost.services.discovery
+          lifetime: 4w
+          item_prototypes:
+            - uuid: ce6cbb428cf440ff9f8ef620d67cc609
+              name: 'Service ''{#SERVICE.NAME}'' - {#SERVICE.CATEGORY} OVH'
+              type: DEPENDENT
+              key: 'ovh.billing.service.cost["{#SERVICE.ID}"]'
+              history: 730d
+              value_type: FLOAT
+              trends: 730d
+              units: €
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.services[?(@.id=="{#SERVICE.ID}")].amount.first()'
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: '0'
+              master_item:
+                key: ovh.cost.raw
+              tags:
+                - tag: category
+                  value: '{#SERVICE.CATEGORY}'
+                - tag: cost
+                  value: service
+                - tag: service
+                  value: '{#SERVICE.NAME}'
+            - uuid: d0eb3452175e40ba9970c9f2cd71d127
+              name: 'Service ''{#SERVICE.NAME}'' 3 months forecast'
+              type: CALCULATED
+              key: 'ovh.billing.service.forecast.3_months["{#SERVICE.ID}"]'
+              value_type: FLOAT
+              units: €
+              params: 'forecast(//ovh.billing.service.cost["{#SERVICE.ID}"], 180d, 90d, "linear", "value")'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      if (value < 0) {
+                          return 0;
+                      }
+                      return Math.round(value, 2);
+              tags:
+                - tag: period
+                  value: '3 months'
+                - tag: scope
+                  value: forecast
+                - tag: service
+                  value: '{#SERVICE.NAME}'
+            - uuid: 40ff3b47b7da4f26af4b23330440c169
+              name: 'Service ''{#SERVICE.NAME}'' 6 months forecast'
+              type: CALCULATED
+              key: 'ovh.billing.service.forecast.6_months["{#SERVICE.ID}"]'
+              delay: 6h
+              value_type: FLOAT
+              units: €
+              params: 'forecast(//ovh.billing.service.cost["{#SERVICE.ID}"], 180d, 180d, "linear", "value")'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      if (value < 0) {
+                          return 0;
+                      }
+                      return Math.round(value, 2);
+              tags:
+                - tag: period
+                  value: '6 months'
+                - tag: scope
+                  value: forecast
+                - tag: service
+                  value: '{#SERVICE.NAME}'
+            - uuid: 75bd589e1b5346d1b1a2d0c6ce9eed18
+              name: 'Service ''{#SERVICE.NAME}'' timeleft reaches budget'
+              type: CALCULATED
+              key: 'ovh.billing.service.timeleft["{#SERVICE.ID}"]'
+              value_type: FLOAT
+              units: s
+              params: 'timeleft(//ovh.billing.service.cost["{#SERVICE.ID}"], 180d, {$OVH.BUDGET:"{#SERVICE.NAME}"}, "linear")'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      if (value < 0) {
+                          return 0;
+                      }
+                      return Math.round(value, 2);
+              tags:
+                - tag: scope
+                  value: timeleft
+                - tag: service
+                  value: '{#SERVICE.NAME}'
+          graph_prototypes:
+            - uuid: 6ad6a31097fb43c7be59e768912445aa
+              name: '{#SERVICE.NAME} - Cost vs Forecast'
+              show_work_period: 'NO'
+              show_triggers: 'NO'
+              graph_items:
+                - drawtype: FILLED_REGION
+                  color: 1A7C11
+                  calc_fnc: ALL
+                  item:
+                    host: 'OVH by HTTP - jLepage'
+                    key: 'ovh.billing.service.cost["{#SERVICE.ID}"]'
+                - sortorder: '1'
+                  drawtype: DASHED_LINE
+                  color: FFBF00
+                  calc_fnc: ALL
+                  item:
+                    host: 'OVH by HTTP - jLepage'
+                    key: 'ovh.billing.service.forecast.3_months["{#SERVICE.ID}"]'
+                - sortorder: '2'
+                  drawtype: BOLD_LINE
+                  color: F63100
+                  calc_fnc: ALL
+                  item:
+                    host: 'OVH by HTTP - jLepage'
+                    key: 'ovh.billing.service.forecast.6_months["{#SERVICE.ID}"]'
+          master_item:
+            key: ovh.cost.discovery
+          lld_macro_paths:
+            - lld_macro: '{#SERVICE.CATEGORY}'
+              path: $.category
+            - lld_macro: '{#SERVICE.ID}'
+              path: $.serviceName
+            - lld_macro: '{#SERVICE.NAME}'
+              path: $.name
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.billing.value
+        - uuid: ebb3cf29c6d442379215869433bb3491
+          name: Dedicated
+          type: DEPENDENT
+          key: ovh.servers.dedicated
+          filter:
+            conditions:
+              - macro: '{#DED_HOSTNAME}'
+                value: '.*'
+              - macro: '{#DED_HOSTNAME}'
+                value: ^change_me$
+                operator: NOT_MATCHES_REGEX
+              - macro: '{#DED_LOCATION}'
+                value: '.*'
+              - macro: '{#DED_LOCATION}'
+                value: ^change_me$
+                operator: NOT_MATCHES_REGEX
+              - macro: '{#DED_REGION}'
+                value: '.*'
+              - macro: '{#DED_REGION}'
+                value: ^change_me$
+                operator: NOT_MATCHES_REGEX
+              - macro: '{#DED_STATUS}'
+                value: '.*'
+              - macro: '{#DED_STATUS}'
+                value: ^change_me$
+                operator: NOT_MATCHES_REGEX
+          lifetime: 31d
+          enabled_lifetime_type: DISABLE_AFTER
+          enabled_lifetime: 2d
+          host_prototypes:
+            - uuid: b663aa3441ca41568d3e7d5d6d273f60
+              host: 'ID_{#DED_SERVICE_NAME}'
+              name: '{#DED_HOSTNAME}'
+              inventory_mode: AUTOMATIC
+              group_links:
+                - group:
+                    name: 'Discovered hosts'
+              group_prototypes:
+                - name: 'OVH/Dedicated/{#DED_LOCATION}'
+              macros:
+                - macro: '{$DED_FIRST_IP_ADDR}'
+                  value: '{#DED_FIRST_IP_ADDR}'
+                - macro: '{$DED_POWER_STATE}'
+                  value: '{#DED_POWER_STATE}'
+              tags:
+                - tag: id
+                  value: '{#DED_SERVICE_NAME}'
+                - tag: location
+                  value: '{#DED_LOCATION}'
+                - tag: product
+                  value: '{#DED_PRODUCT}'
+                - tag: provider
+                  value: ovh
+                - tag: rack
+                  value: '{#DED_RACK}'
+                - tag: region
+                  value: '{#DED_REGION}'
+                - tag: type
+                  value: dedicated
+              custom_interfaces: 'YES'
+              interfaces:
+                - ip: '{#DED_FIRST_IP_ADDR}'
+          master_item:
+            key: ovh.servers.raw
+          lld_macro_paths:
+            - lld_macro: '{#DED_FIRST_IP_ADDR}'
+              path: $.raw.ip
+            - lld_macro: '{#DED_HOSTNAME}'
+              path: $.name
+            - lld_macro: '{#DED_LOCATION}'
+              path: $.location
+            - lld_macro: '{#DED_POWER_STATE}'
+              path: $.raw.powerState
+            - lld_macro: '{#DED_PRODUCT}'
+              path: $.raw.commercialRange
+            - lld_macro: '{#DED_RACK}'
+              path: $.raw.rack
+            - lld_macro: '{#DED_REGION}'
+              path: $.raw.region
+            - lld_macro: '{#DED_SERVICE_NAME}'
+              path: $.serviceName
+            - lld_macro: '{#DED_STATUS}'
+              path: $.status
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.resources.value[?(@.resourceType=="DEDICATED_SERVER")]'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+        - uuid: 21096b8def2245b48a8462c10263ca66
+          name: PublicCloud
+          type: DEPENDENT
+          key: ovh.servers.public_cloud
+          filter:
+            conditions:
+              - macro: '{#OPC_HOSTNAME}'
+                value: '.*'
+              - macro: '{#OPC_HOSTNAME}'
+                value: ^change_me$
+                operator: NOT_MATCHES_REGEX
+              - macro: '{#OPC_LOCATION}'
+                value: '.*'
+              - macro: '{#OPC_LOCATION}'
+                value: ^change_me$
+                operator: NOT_MATCHES_REGEX
+              - macro: '{#OPC_SERVICE_NAME}'
+                value: '.*'
+              - macro: '{#OPC_SERVICE_NAME}'
+                value: ^change_me$
+                operator: NOT_MATCHES_REGEX
+              - macro: '{#OPC_STATUS}'
+                value: '.*'
+              - macro: '{#OPC_STATUS}'
+                value: ^(SHUTOFF|INACTIVE|DELETED)$
+                operator: NOT_MATCHES_REGEX
+          lifetime: 31d
+          enabled_lifetime_type: DISABLE_AFTER
+          enabled_lifetime: 2d
+          host_prototypes:
+            - uuid: 081597b72ebe4241ad4e6f945aa8cd60
+              host: 'ID_{#OPC_SERVICE_NAME}'
+              name: 'VM: {#OPC_HOSTNAME}'
+              status: DISABLED
+              inventory_mode: AUTOMATIC
+              group_links:
+                - group:
+                    name: 'Virtual machines'
+              group_prototypes:
+                - name: 'OVH/Public_Cloud/{#OPC_LOCATION}'
+                - name: '{#OPC_PROJECT_NAME}/{#OPC_LOCATION}'
+              macros:
+                - macro: '{$VM_FIRST_IP_ADDR}'
+                  value: '{#OPC_FIRST_IP_ADDR}'
+                - macro: '{$VM_FLAVOR_ID}'
+                  value: '{#OPC_FLAVOR_ID}'
+                - macro: '{$VM_HOSTNAME}'
+                  value: '{#OPC_HOSTNAME}'
+                - macro: '{$VM_LOCATION}'
+                  value: '{#OPC_LOCATION}'
+              tags:
+                - tag: id
+                  value: '{#OPC_SERVICE_NAME}'
+                - tag: location
+                  value: '{#OPC_LOCATION}'
+                - tag: plan
+                  value: '{#OPC_PLAN_CODE}'
+                - tag: project
+                  value: '{#OPC_PROJECT_NAME}'
+                - tag: provider
+                  value: ovh
+                - tag: type
+                  value: 'public cloud'
+          master_item:
+            key: ovh.servers.raw
+          lld_macro_paths:
+            - lld_macro: '{#OPC_FIRST_IP_ADDR}'
+              path: '$.raw.ipAddresses[0].ip.first()'
+            - lld_macro: '{#OPC_FLAVOR_ID}'
+              path: $.raw.flavorId
+            - lld_macro: '{#OPC_HOSTNAME}'
+              path: $.name
+            - lld_macro: '{#OPC_LOCATION}'
+              path: $.location
+            - lld_macro: '{#OPC_PLAN_CODE}'
+              path: $.raw.planCode
+            - lld_macro: '{#OPC_PROJECT_ID}'
+              path: $.projectId
+            - lld_macro: '{#OPC_PROJECT_NAME}'
+              path: $.projectName
+            - lld_macro: '{#OPC_SERVICE_NAME}'
+              path: $.serviceName
+            - lld_macro: '{#OPC_SSHKEY_ID}'
+              path: $.raw.sshKeyId
+            - lld_macro: '{#OPC_STATUS}'
+              path: $.status
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.resources.value[?(@.resourceType=="PUBLICCLOUD_INSTANCE")]'
+          overrides:
+            - name: 'Create inactive if SHUTOFF'
+              step: '1'
+              filter:
+                conditions:
+                  - macro: '{#OPC_STATUS}'
+                    value: ^SHUTOFF$
+                    operator: NOT_MATCHES_REGEX
+              operations:
+                - operationobject: HOST_PROTOTYPE
+                  operator: LIKE
+                  status: ENABLED
+      tags:
+        - tag: provider
+          value: ovh
+      macros:
+        - macro: '{$OVH.APP_ID}'
+          value: '<change_me>'
+          description: 'Credentials : Application ID'
+        - macro: '{$OVH.APP_SECRET}'
+          value: '<change_me>'
+          description: 'Credentials : Application secret'
+        - macro: '{$OVH.BUDGET}'
+          value: '50'
+        - macro: '{$OVH.CONSUMER_KEY}'
+          value: '<change_me>'
+          description: 'Credentials : Cconsumer key'
+        - macro: '{$OVH.ENDPOINT}'
+          value: ovh-eu
+          description: 'OVH Endpoint (ovh-eu, ovh-ca, ovh-us, ...)'
+        - macro: '{$OVH.PROXY}'
+          description: 'Proxy for OVH endpoint'
+      dashboards:
+        - uuid: 8135a76dd30f4c429e51630e598560bc
+          name: 'Cost explorer'
+          pages:
+            - widgets:
+                - type: svggraph
+                  name: 'Cost explorer by category'
+                  width: '36'
+                  height: '5'
+                  fields:
+                    - type: INTEGER
+                      name: ds.0.aggregate_function
+                      value: '5'
+                    - type: INTEGER
+                      name: ds.0.aggregate_grouping
+                      value: '1'
+                    - type: INTEGER
+                      name: ds.0.approximation
+                      value: '4'
+                    - type: STRING
+                      name: ds.0.color
+                      value: FF8A65
+                    - type: STRING
+                      name: ds.0.data_set_label
+                      value: 'Total cost'
+                    - type: INTEGER
+                      name: ds.0.fill
+                      value: '0'
+                    - type: STRING
+                      name: ds.0.items.0
+                      value: 'Service * OVH'
+                    - type: INTEGER
+                      name: ds.0.missingdatafunc
+                      value: '2'
+                    - type: INTEGER
+                      name: ds.0.transparency
+                      value: '3'
+                    - type: INTEGER
+                      name: ds.0.width
+                      value: '2'
+                    - type: INTEGER
+                      name: ds.1.aggregate_function
+                      value: '5'
+                    - type: INTEGER
+                      name: ds.1.aggregate_grouping
+                      value: '1'
+                    - type: INTEGER
+                      name: ds.1.approximation
+                      value: '4'
+                    - type: STRING
+                      name: ds.1.color
+                      value: 0080FF
+                    - type: STRING
+                      name: ds.1.data_set_label
+                      value: 'Domains cost'
+                    - type: STRING
+                      name: ds.1.items.0
+                      value: 'Service * domain OVH'
+                    - type: INTEGER
+                      name: ds.1.missingdatafunc
+                      value: '2'
+                    - type: INTEGER
+                      name: ds.1.stacked
+                      value: '1'
+                    - type: INTEGER
+                      name: ds.1.transparency
+                      value: '3'
+                    - type: INTEGER
+                      name: ds.2.aggregate_function
+                      value: '5'
+                    - type: INTEGER
+                      name: ds.2.aggregate_grouping
+                      value: '1'
+                    - type: INTEGER
+                      name: ds.2.approximation
+                      value: '4'
+                    - type: STRING
+                      name: ds.2.color
+                      value: 4DB6AC
+                    - type: STRING
+                      name: ds.2.data_set_label
+                      value: 'Cloud projects cost'
+                    - type: STRING
+                      name: ds.2.items.0
+                      value: 'Service * cloud OVH'
+                    - type: INTEGER
+                      name: ds.2.missingdatafunc
+                      value: '2'
+                    - type: INTEGER
+                      name: ds.2.stacked
+                      value: '1'
+                    - type: INTEGER
+                      name: ds.2.transparency
+                      value: '3'
+                    - type: INTEGER
+                      name: ds.3.aggregate_function
+                      value: '5'
+                    - type: INTEGER
+                      name: ds.3.aggregate_grouping
+                      value: '1'
+                    - type: INTEGER
+                      name: ds.3.approximation
+                      value: '4'
+                    - type: STRING
+                      name: ds.3.color
+                      value: BCAAA4
+                    - type: STRING
+                      name: ds.3.data_set_label
+                      value: 'Dedicated servers cost'
+                    - type: STRING
+                      name: ds.3.items.0
+                      value: 'Service * dedicated OVH'
+                    - type: INTEGER
+                      name: ds.3.missingdatafunc
+                      value: '2'
+                    - type: INTEGER
+                      name: ds.3.stacked
+                      value: '1'
+                    - type: INTEGER
+                      name: ds.3.transparency
+                      value: '3'
+                    - type: INTEGER
+                      name: ds.4.aggregate_function
+                      value: '5'
+                    - type: INTEGER
+                      name: ds.4.aggregate_grouping
+                      value: '1'
+                    - type: STRING
+                      name: ds.4.color
+                      value: FFD54F
+                    - type: STRING
+                      name: ds.4.data_set_label
+                      value: Storage
+                    - type: STRING
+                      name: ds.4.items.0
+                      value: 'Service * storage OVH'
+                    - type: INTEGER
+                      name: ds.4.missingdatafunc
+                      value: '2'
+                    - type: INTEGER
+                      name: ds.4.stacked
+                      value: '1'
+                    - type: INTEGER
+                      name: ds.4.transparency
+                      value: '3'
+                    - type: INTEGER
+                      name: legend_aggregation
+                      value: '1'
+                    - type: INTEGER
+                      name: legend_lines
+                      value: '4'
+                    - type: INTEGER
+                      name: legend_lines_mode
+                      value: '1'
+                    - type: INTEGER
+                      name: legend_statistic
+                      value: '1'
+                    - type: STRING
+                      name: reference
+                      value: RCHHG
+                    - type: INTEGER
+                      name: righty
+                      value: '0'

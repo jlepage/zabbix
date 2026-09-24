@@ -1,0 +1,424 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: b0185ce39e5f423ab0358d97695b10f3
+      name: 'Templates/Environmental'
+  templates:
+    - uuid: 622e95d5c2ca4ab0a1ac58eb2abb26ff
+      template: 'Simplified Carbon Footprint - Reference'
+      name: 'Simplified Carbon Footprint - Reference'
+      vendor:
+        name: jLepage
+        version: 7.4-2
+      description: |
+        Central reference and fleet aggregation for an indicative cloud-VM carbon model.
+        The methodology is inspired by concepts, formulas and reference data published by the Boavizta project, but these calculations are simplified and are NOT produced, maintained, validated or endorsed by Boavizta. Results are not equivalent to BoaviztAPI results.
+        Create a host whose technical Host name is exactly "Simplified Carbon Footprint Reference", link this template to it, and do not add an agent interface.
+        Electricity examples in gCO2e/kWh: FRA 41.44; CAN 190.72; IRL 256.54; DEU 329.65; HKG 675.48; SGP 41.44 (project convention: SGP = FRA).
+        PUE, networking and underlying physical storage infrastructure are excluded.
+      groups:
+        - name: 'Templates/Environmental'
+      items:
+            - uuid: 94c0edca7be54abda5a7049178d4e59f
+              name: 'Carbon footprint reference: CPU coefficient a'
+              type: CALCULATED
+              key: 'carbon.reference.cpu.a'
+              delay: '1d'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              params: '171.1813'
+              description: |
+                CPU curve coefficient inspired by Boavizta.
+            - uuid: f989f65a356e4f2b8cc822ff3a2a057d
+              name: 'Carbon footprint reference: CPU coefficient b'
+              type: CALCULATED
+              key: 'carbon.reference.cpu.b'
+              delay: '1d'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              params: '0.0354'
+              description: |
+                CPU curve coefficient inspired by Boavizta.
+            - uuid: c1982bd1a10d4d19bca3c7e0ce8f34bb
+              name: 'Carbon footprint reference: CPU coefficient c'
+              type: CALCULATED
+              key: 'carbon.reference.cpu.c'
+              delay: '1d'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              params: '36.8953'
+              description: |
+                CPU curve coefficient inspired by Boavizta.
+            - uuid: 64753325407b42d79b9fe629b3f1f71e
+              name: 'Carbon footprint reference: CPU coefficient d'
+              type: CALCULATED
+              key: 'carbon.reference.cpu.d'
+              delay: '1d'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              params: '-10.1336'
+              description: |
+                CPU curve coefficient inspired by Boavizta.
+            - uuid: 1557c788d09a4614b3ff8977093750d4
+              name: 'Carbon footprint reference: Reference server vCPU'
+              type: CALCULATED
+              key: 'carbon.reference.cpu.vcpu'
+              delay: '1d'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: 'vCPU'
+              params: '64'
+              description: |
+                Generic reference server capacity.
+            - uuid: 23e4db352e4749b58c2248e5e54ae7b7
+              name: 'Carbon footprint reference: RAM power per GiB'
+              type: CALCULATED
+              key: 'carbon.reference.ram.power'
+              delay: '1d'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: 'W/GiB'
+              params: '0.284'
+              description: |
+                RAM operational-power coefficient.
+            - uuid: 7089ece34630404b8a9231f3cf393d7b
+              name: 'Carbon footprint reference: Other components ratio'
+              type: CALCULATED
+              key: 'carbon.reference.other.ratio'
+              delay: '1d'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              params: '0.33'
+              description: |
+                Additional operational-power ratio.
+            - uuid: 14af89f4bed64777a0e274c91821fec8
+              name: 'Carbon footprint reference: Embodied carbon per vCPU per hour'
+              type: CALCULATED
+              key: 'carbon.reference.embodied.vcpu'
+              delay: '1d'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: 'gCO2e/vCPU/h'
+              params: '0.4013'
+              description: |
+                Simplified coefficient: 900 kgCO2e / 35040 h / 64 vCPU.
+            - uuid: eaf8876dd4664ea1805d22422b0671d6
+              name: 'Carbon footprint reference: Electricity FRA'
+              type: CALCULATED
+              key: 'carbon.reference.electricity[FRA]'
+              delay: '1d'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: 'gCO2e/kWh'
+              params: '41.44'
+              description: |
+                France reference.
+            - uuid: 88e088aaa38a425eaaceee2a27b79979
+              name: 'Carbon footprint reference: Electricity CAN'
+              type: CALCULATED
+              key: 'carbon.reference.electricity[CAN]'
+              delay: '1d'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: 'gCO2e/kWh'
+              params: '190.72'
+              description: |
+                Canada reference.
+            - uuid: 24dc17f6690b46d7b2fac2be860c1f9b
+              name: 'Carbon footprint reference: Electricity IRL'
+              type: CALCULATED
+              key: 'carbon.reference.electricity[IRL]'
+              delay: '1d'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: 'gCO2e/kWh'
+              params: '256.54'
+              description: |
+                Ireland reference.
+            - uuid: 35b32fb60a8248e298f763e64af2b5d7
+              name: 'Carbon footprint reference: Electricity DEU'
+              type: CALCULATED
+              key: 'carbon.reference.electricity[DEU]'
+              delay: '1d'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: 'gCO2e/kWh'
+              params: '329.65'
+              description: |
+                Germany reference.
+            - uuid: b7430c8ef497423da4adbca5a1b409eb
+              name: 'Carbon footprint reference: Electricity HKG'
+              type: CALCULATED
+              key: 'carbon.reference.electricity[HKG]'
+              delay: '1d'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: 'gCO2e/kWh'
+              params: '675.48'
+              description: |
+                Hong Kong reference.
+            - uuid: 1f9d50f6b43e4ae198d1f2f2d2eb4e50
+              name: 'Carbon footprint reference: Electricity SGP'
+              type: CALCULATED
+              key: 'carbon.reference.electricity[SGP]'
+              delay: '1d'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: 'gCO2e/kWh'
+              params: '41.44'
+              description: |
+                PROJECT CONVENTION: Singapore = France.
+            - uuid: 08f52feb442c4770a38b8d5649336176
+              name: 'Carbon footprint fleet: Total vCPU'
+              type: CALCULATED
+              key: 'carbon.total.vcpu'
+              delay: '5m'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: 'vCPU'
+              params: 'sum(last_foreach(/*/carbon.vcpu?[tag="component:carbon-footprint"]))'
+              description: |
+                Aggregate of latest tagged VM values.
+            - uuid: 5a087c444b4a4c9984e1e793a801d42b
+              name: 'Carbon footprint fleet: Total RAM'
+              type: CALCULATED
+              key: 'carbon.total.ram'
+              delay: '5m'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: 'GiB'
+              params: 'sum(last_foreach(/*/carbon.ram?[tag="component:carbon-footprint"]))'
+              description: |
+                Aggregate of latest tagged VM values.
+            - uuid: 6fcc5dfdab29498daf516ad96d6a36a1
+              name: 'Carbon footprint fleet: Total estimated power'
+              type: CALCULATED
+              key: 'carbon.total.power'
+              delay: '5m'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: 'W'
+              params: 'sum(last_foreach(/*/carbon.power.avg?[tag="component:carbon-footprint"]))'
+              description: |
+                Aggregate of latest tagged VM values.
+            - uuid: 37aab7a8d2674ca89785533abfbe83b5
+              name: 'Carbon footprint fleet: Total operational emissions'
+              type: CALCULATED
+              key: 'carbon.total.co2.operational'
+              delay: '1h'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: 'gCO2e'
+              params: 'sum(last_foreach(/*/carbon.co2.operational?[tag="component:carbon-footprint"]))'
+              description: |
+                Aggregate of latest tagged VM values.
+            - uuid: 2578a783e87b4e45aa8d99d1230df8eb
+              name: 'Carbon footprint fleet: Total embodied emissions'
+              type: CALCULATED
+              key: 'carbon.total.co2.embodied'
+              delay: '1h'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: 'gCO2e'
+              params: 'sum(last_foreach(/*/carbon.co2.embodied?[tag="component:carbon-footprint"]))'
+              description: |
+                Aggregate of latest tagged VM values.
+            - uuid: 5adeccdb405e4a1fa95b3c841fe6cf56
+              name: 'Carbon footprint fleet: Total emissions'
+              type: CALCULATED
+              key: 'carbon.total.co2'
+              delay: '1h'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: 'gCO2e'
+              params: 'sum(last_foreach(/*/carbon.co2.total?[tag="component:carbon-footprint"]))'
+              description: |
+                Aggregate of latest tagged VM values.
+      tags:
+        - tag: model
+          value: simplified-carbon-footprint
+    - uuid: c51f565cdbc84bd89d701e0794e26fab
+      template: 'Simplified Carbon Footprint - Cloud VM'
+      name: 'Simplified Carbon Footprint - Cloud VM'
+      vendor:
+        name: jLepage
+        version: 7.4-2
+      description: |
+        Indicative carbon-footprint estimation for cloud virtual machines.
+        Inspired by concepts, formulas and reference data published by Boavizta, but implemented as simplified Zabbix calculations. This template is NOT produced, maintained, validated or endorsed by Boavizta and results are not equivalent to BoaviztAPI results.
+
+        REQUIREMENTS: the host must already use a standard Zabbix agent template such as "Linux by Zabbix agent" or "Windows by Zabbix agent", or otherwise provide these exact keys:
+        - system.cpu.num
+        - system.cpu.util[,idle]
+        - vm.memory.size[total]
+
+        A host whose technical Host name is exactly "Simplified Carbon Footprint Reference" must exist and be linked to "Simplified Carbon Footprint - Reference".
+
+        Set {$CARBON.INTENSITY} on each VM in gCO2e/kWh. Examples: FRA 41.44; CAN 190.72; IRL 256.54; DEU 329.65; HKG 675.48; SGP 41.44 (project convention: SGP = FRA).
+        Results are intended for order-of-magnitude monitoring, comparison and trend analysis, not precise carbon accounting.
+        CPU and RAM power are intentionally exposed as separate calculated items so each stage of the estimation can be validated independently.
+      groups:
+        - name: 'Templates/Environmental'
+      macros:
+        - macro: '{$CARBON.INTENSITY}'
+          value: '41.44'
+          description: 'Electricity carbon intensity in gCO2e/kWh. Default FRA; override on each VM.'
+      items:
+            - uuid: d97dfc29ce6b4cb4a2069ee77b3ad792
+              name: 'Carbon footprint: vCPU'
+              type: CALCULATED
+              key: 'carbon.vcpu'
+              delay: '1h'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: 'vCPU'
+              params: 'last(//system.cpu.num)'
+              description: |
+                vCPU visible to the guest OS.
+              tags:
+                - tag: component
+                  value: carbon-footprint
+            - uuid: fb2b53f73f4f45f6a37ad18f86dc90ad
+              name: 'Carbon footprint: RAM'
+              type: CALCULATED
+              key: 'carbon.ram'
+              delay: '1h'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: 'GiB'
+              params: 'last(//vm.memory.size[total])/1073741824'
+              description: |
+                Guest RAM in GiB.
+              tags:
+                - tag: component
+                  value: carbon-footprint
+            - uuid: 8a1739533f904d51946803267256b278
+              name: 'Carbon footprint: CPU utilization'
+              type: CALCULATED
+              key: 'carbon.cpu.util'
+              delay: '1h'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: '%'
+              params: '100-avg(//system.cpu.util[,idle],1h)'
+              description: |
+                Mean CPU utilization over the preceding hour.
+              tags:
+                - tag: component
+                  value: carbon-footprint
+            - uuid: c754efaa8e3545e694773a503ed172bc
+              name: 'Carbon footprint: Estimated CPU power'
+              type: CALCULATED
+              key: 'carbon.power.cpu'
+              delay: '1h'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: 'W'
+              params: 'last(/Simplified Carbon Footprint Reference/carbon.reference.cpu.a)*log(last(/Simplified Carbon Footprint Reference/carbon.reference.cpu.b)*(last(//carbon.cpu.util)+last(/Simplified Carbon Footprint Reference/carbon.reference.cpu.c)))+last(/Simplified Carbon Footprint Reference/carbon.reference.cpu.d)*last(//carbon.vcpu)/last(/Simplified Carbon Footprint Reference/carbon.reference.cpu.vcpu)'
+              description: |
+                Estimated CPU power allocated to the VM.
+              tags:
+                - tag: component
+                  value: carbon-footprint
+            - uuid: b1d27112aaf94725ae29d05aaf11ef82
+              name: 'Carbon footprint: Estimated RAM power'
+              type: CALCULATED
+              key: 'carbon.power.ram'
+              delay: '1h'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: 'W'
+              params: 'last(//carbon.ram)*last(/Simplified Carbon Footprint Reference/carbon.reference.ram.power)'
+              description: |
+                Estimated RAM power allocated to the VM.
+              tags:
+                - tag: component
+                  value: carbon-footprint
+            - uuid: 49654b3b2fc14be3a48ea18514f412f4
+              name: 'Carbon footprint: Estimated average power'
+              type: CALCULATED
+              key: 'carbon.power.avg'
+              delay: '1h'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: 'W'
+              params: 'last(//carbon.power.cpu)+last(//carbon.power.ram)+(last(//carbon.power.cpu)+last(//carbon.power.ram))*last(/Simplified Carbon Footprint Reference/carbon.reference.other.ratio)'
+              description: |
+                Estimated average VM power including the other-components ratio.
+              tags:
+                - tag: component
+                  value: carbon-footprint
+            - uuid: adf71f7bd6734218b2dcaefb050bd95b
+              name: 'Carbon footprint: Operational emissions'
+              type: CALCULATED
+              key: 'carbon.co2.operational'
+              delay: '1h'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: 'gCO2e'
+              params: 'last(//carbon.power.avg)/1000*{$CARBON.INTENSITY}'
+              description: |
+                Estimated operational emissions for one hour.
+              tags:
+                - tag: component
+                  value: carbon-footprint
+            - uuid: 6b8b35577cf64a0992891f5d838316a3
+              name: 'Carbon footprint: Embodied emissions'
+              type: CALCULATED
+              key: 'carbon.co2.embodied'
+              delay: '1h'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: 'gCO2e'
+              params: 'last(//carbon.vcpu)*last(/Simplified Carbon Footprint Reference/carbon.reference.embodied.vcpu)'
+              description: |
+                Simplified embodied emissions for one hour.
+              tags:
+                - tag: component
+                  value: carbon-footprint
+            - uuid: b95aaefea7e146e18f40498fbb370896
+              name: 'Carbon footprint: Total emissions'
+              type: CALCULATED
+              key: 'carbon.co2.total'
+              delay: '1h'
+              history: 31d
+              trends: 365d
+              value_type: FLOAT
+              units: 'gCO2e'
+              params: 'last(//carbon.co2.operational)+last(//carbon.co2.embodied)'
+              description: |
+                Operational + embodied emissions for one hour.
+              tags:
+                - tag: component
+                  value: carbon-footprint
+      tags:
+        - tag: model
+          value: simplified-carbon-footprint

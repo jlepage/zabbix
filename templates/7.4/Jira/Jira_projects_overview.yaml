@@ -1,0 +1,1265 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: a571c0d144b14fd4a87a9d9b2aa9fcd6
+      name: Templates/Applications
+  templates:
+    - uuid: 4ca1e0c740e947c6b59d940a9d086212
+      template: 'Jira cloud projects overview'
+      name: 'Jira cloud projects overview'
+      vendor:
+        name: jLepage
+        version: 7.4-1
+      groups:
+        - name: Templates/Applications
+      items:
+        - uuid: 3ef2815d1e9345dba3c4cee4911a9960
+          name: '3 to 6 months old tickets - global'
+          type: CALCULATED
+          key: jira.tickets.age3to6m.total
+          delay: 1h
+          units: '!tickets'
+          params: 'sum(last_foreach(//jira.tickets.age3to6m[*]))'
+          tags:
+            - tag: project
+              value: global
+            - tag: tickets_status
+              value: age3to6m
+        - uuid: 21ba37e6c67f4838b8e555ad88bc53fe
+          name: '6 to 12 months old tickets - global'
+          type: CALCULATED
+          key: jira.tickets.age6to12m.total
+          delay: 1h
+          units: '!tickets'
+          params: 'sum(last_foreach(//jira.tickets.age6to12m[*]))'
+          tags:
+            - tag: project
+              value: global
+            - tag: tickets_status
+              value: age6to12m
+        - uuid: 83768c3787be43e6b60ce01df37aa2d3
+          name: '0 to 3 months old tickets - global'
+          type: CALCULATED
+          key: jira.tickets.agelt3m.total
+          delay: 1h
+          units: '!tickets'
+          params: 'sum(last_foreach(//jira.tickets.agelt3m[*]))'
+          tags:
+            - tag: project
+              value: global
+            - tag: tickets_status
+              value: agelt3m
+        - uuid: 4479ec4ec2474b428185e5cf4c3dfd23
+          name: 'Bugs open tickets - global'
+          type: CALCULATED
+          key: jira.tickets.bugs_open.total
+          delay: 1h
+          units: '!tickets'
+          params: 'sum(last_foreach(//jira.tickets.bugs_open[*]))'
+          tags:
+            - tag: project
+              value: global
+            - tag: tickets_status
+              value: bugs_open
+        - uuid: 020e2ca08e824911939b842821802b2f
+          name: 'Jira data collecte'
+          type: SCRIPT
+          key: jira.tickets.data.raw
+          delay: 30m
+          history: '0'
+          value_type: TEXT
+          params: |
+            /*
+             * Zabbix master item (Script) - Statistiques des tickets JIRA par projet
+             *
+             * Rôle : alimenter les items dépendants "jira.tickets.*[{#PROJECT.KEY}]"
+             * créés par la LLD de découverte des projets (jira_projects_discovery.js).
+             *
+             * Design : 3 requêtes JQL larges (tous projets confondus, paginées) plutôt
+             * que N projets x M métriques en appels unitaires. Réduit drastiquement le
+             * nombre d'appels HTTP et le risque de rate limiting Jira Cloud - le coût
+             * ne croît pas avec le nombre de projets supervisés.
+             * Aucun filtre "project in (...)" n'est appliqué : ce script remonte les
+             * métriques de tous les projets visibles par le compte de service, c'est
+             * la règle de découverte (déjà filtrée par macros regex) qui décide quels
+             * projets ont effectivement un item créé côté Zabbix.
+             *
+             * Paramètres (Parameters de l'item - identiques à jira_projects_discovery.js) :
+             *   base_url, email, api_token
+             *
+             * Sortie, triée par "key" :
+             * {
+             *   "errors": "",
+             *   "metrics": [
+             *     {
+             *       "key": "PAY",
+             *       "open": 12,
+             *       "new_7d": 3,
+             *       "resolved_7d": 5,
+             *       "overdue": 2,
+             *       "unassigned": 4,
+             *       "bugs_open": 3,
+             *       "high_priority_open": 1,
+             *       "open_age_lt_3m": 6,
+             *       "open_age_3_6m": 5,
+             *       "open_age_6_12m": 2,
+             *       "open_age_gt_12m": 1,
+             *       "open_avg_age_seconds": 4082400
+             *     },
+             *     ...
+             *   ]
+             * }
+             *
+             * Endpoint : GET /rest/api/3/search/jql (remplace /rest/api/3/search,
+             * supprimé - HTTP 410 - depuis mai 2025, cf. CHANGE-2046). Pagination par
+             * nextPageToken/isLast UNIQUEMENT - pas de startAt, pas de total.
+             *
+             * Hypothèses à ajuster selon votre configuration Jira (noms de priorité,
+             * de type de ticket) : constantes HIGH_PRIORITY_NAMES / BUG_TYPE_NAMES
+             * ci-dessous.
+             */
+
+            var HIGH_PRIORITY_NAMES = ['Highest', 'High'];
+            var BUG_TYPE_NAMES = ['Bug'];
+            var MAX_RESULTS = 100;
+
+            // Tranches d'ancienneté du backlog ouvert, EXCLUSIVES (un ticket n'incrémente
+            // qu'un seul compteur, celui de la tranche la plus élevée qu'il atteint).
+            // Ordre décroissant, seuil final à 0 pour que la partition soit exhaustive
+            // (la somme des 4 tranches = "open") : indispensable pour un pie chart ou
+            // une aire empilée qui doit représenter 100% du backlog ouvert.
+            var AGE_BUCKETS = [
+            	{ key: 'open_age_gt_12m', min_days: 365 },  // 12 mois et plus
+            	{ key: 'open_age_6_12m', min_days: 180 },   // 6 à 12 mois
+            	{ key: 'open_age_3_6m', min_days: 90 },     // 3 à 6 mois
+            	{ key: 'open_age_lt_3m', min_days: 0 }      // moins de 3 mois
+            ];
+
+            var Jira = {
+            	params: {},
+            	base_url: null,
+            	auth_header: null,
+            	http: null,
+
+            	setParams: function (params) {
+            		['base_url', 'email', 'api_token'].forEach(function (field) {
+            			if (typeof params !== 'object' || typeof params[field] === 'undefined' || params[field] === '') {
+            				throw 'Required param is not set: ' + field + '.';
+            			}
+            		});
+
+            		Jira.params = params;
+            		Jira.base_url = params.base_url.replace(/\/+$/, '');
+            		Jira.auth_header = 'Basic ' + btoa(params.email + ':' + params.api_token);
+
+            		Jira.http = new HttpRequest();
+            		if (typeof params.proxy !== 'undefined' && params.proxy !== '') {
+            			Jira.http.setProxy(params.proxy);
+            		}
+            	},
+
+            	request: function (path) {
+            		var url = Jira.base_url + path,
+            			response;
+
+            		Jira.http.clearHeader();
+            		Jira.http.addHeader('Authorization: ' + Jira.auth_header);
+            		Jira.http.addHeader('Accept: application/json');
+
+            		Zabbix.log(4, '[ Jira ] Sending request: GET ' + url);
+            		response = Jira.http.get(url);
+            		Zabbix.log(4, '[ Jira ] Received response with status code ' + Jira.http.getStatus() + ': ' + response);
+
+            		if (Jira.http.getStatus() === 401) {
+            			throw 'Unauthorized (401) on GET ' + path + '. Check email/api_token.';
+            		}
+            		if (Jira.http.getStatus() === 403) {
+            			throw 'Forbidden (403) on GET ' + path + '. Check account permissions (Browse Projects).';
+            		}
+            		if (Jira.http.getStatus() !== 200 || response === null) {
+            			throw 'Request failed with status code ' + Jira.http.getStatus() + ': ' + response;
+            		}
+
+            		try {
+            			return JSON.parse(response);
+            		}
+            		catch (error) {
+            			throw 'Failed to parse response received from API for ' + path + '.';
+            		}
+            	},
+
+            	// Pagine sur /search/jql (nextPageToken/isLast) et appelle onIssue()
+            	// pour chaque ticket retourné. fields : liste CSV des champs Jira à
+            	// demander (garder minimal, ça influe directement sur la taille de page).
+            	searchAll: function (jql, fields, onIssue) {
+            		var next_page_token = null,
+            			is_last = false;
+
+            		while (!is_last) {
+            			var path = '/rest/api/3/search/jql?jql=' + encodeURIComponent(jql) +
+            				'&fields=' + encodeURIComponent(fields) +
+            				'&maxResults=' + MAX_RESULTS;
+
+            			if (next_page_token !== null) {
+            				path += '&nextPageToken=' + encodeURIComponent(next_page_token);
+            			}
+
+            			var page = Jira.request(path);
+
+            			(page.issues || []).forEach(onIssue);
+
+            			is_last = (page.isLast === true) || !page.issues || page.issues.length === 0;
+            			next_page_token = page.nextPageToken || null;
+            		}
+            	}
+            };
+
+            var data = { errors: {}, metrics: [] };
+            var by_project = {};
+
+            function ensure(key) {
+            	if (!by_project[key]) {
+            		by_project[key] = {
+            			key: key,
+            			open: 0,
+            			new_7d: 0,
+            			resolved_7d: 0,
+            			overdue: 0,
+            			unassigned: 0,
+            			bugs_open: 0,
+            			high_priority_open: 0,
+            			open_age_lt_3m: 0,
+            			open_age_3_6m: 0,
+            			open_age_6_12m: 0,
+            			open_age_gt_12m: 0,
+            			open_avg_age_seconds: 0,
+            			_age_sum_ms: 0 // accumulateur interne, retiré avant sérialisation finale
+            		};
+            	}
+            	return by_project[key];
+            }
+
+            try {
+            	Jira.setParams(JSON.parse(value));
+            }
+            catch (error) {
+            	data.errors.auth = error.toString();
+            }
+
+            if (!('auth' in data.errors)) {
+            	var today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD, comparable lexicographiquement
+
+            	// --- 1. Tous les tickets ouverts : alimente open/overdue/unassigned/bugs/priorité -----
+            	try {
+            		Jira.searchAll(
+            			'statusCategory != Done',
+            			'project,priority,issuetype,assignee,duedate,created',
+            			function (issue) {
+            				var f = issue.fields,
+            					p = ensure(f.project.key);
+
+            				p.open++;
+
+            				if (f.duedate && f.duedate < today) {
+            					p.overdue++;
+            				}
+            				if (!f.assignee) {
+            					p.unassigned++;
+            				}
+            				if (f.issuetype && BUG_TYPE_NAMES.indexOf(f.issuetype.name) !== -1) {
+            					p.bugs_open++;
+            				}
+            				if (f.priority && HIGH_PRIORITY_NAMES.indexOf(f.priority.name) !== -1) {
+            					p.high_priority_open++;
+            				}
+            				if (f.created) {
+            					var age_ms = Date.now() - new Date(f.created).getTime(),
+            						age_days = age_ms / 86400000; // usage local, uniquement pour le bucketing ci-dessous
+
+            					p._age_sum_ms += age_ms;
+
+            					for (var i = 0; i < AGE_BUCKETS.length; i++) {
+            						if (age_days >= AGE_BUCKETS[i].min_days) {
+            							p[AGE_BUCKETS[i].key]++;
+            							break; // tranche exclusive : on s'arrête au premier seuil atteint
+            						}
+            					}
+            				}
+            			}
+            		);
+            	}
+            	catch (error) {
+            		data.errors.open = error.toString();
+            	}
+
+            	// --- 2. Nouveaux tickets (7 derniers jours) --------------------------------------------
+            	try {
+            		Jira.searchAll(
+            			'created >= -7d',
+            			'project',
+            			function (issue) {
+            				ensure(issue.fields.project.key).new_7d++;
+            			}
+            		);
+            	}
+            	catch (error) {
+            		data.errors.new_7d = error.toString();
+            	}
+
+            	// --- 3. Tickets résolus (7 derniers jours) ---------------------------------------------
+            	try {
+            		Jira.searchAll(
+            			'statusCategory = Done AND resolutiondate >= -7d',
+            			'project',
+            			function (issue) {
+            				ensure(issue.fields.project.key).resolved_7d++;
+            			}
+            		);
+            	}
+            	catch (error) {
+            		data.errors.resolved_7d = error.toString();
+            	}
+
+            	for (var key in by_project) {
+            		var p = by_project[key];
+            		p.open_avg_age_seconds = p.open > 0 ? Math.round(p._age_sum_ms / 1000 / p.open) : 0;
+            		delete p._age_sum_ms; // usage interne uniquement, pas d'intérêt côté Zabbix
+            		data.metrics.push(p);
+            	}
+            	data.metrics.sort(function (a, b) {
+            		return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0);
+            	});
+            }
+
+            if (Object.keys(data.errors).length !== 0) {
+            	var errors = 'Failed to receive data:';
+            	for (var error_key in data.errors) {
+            		errors += '\n' + error_key + ' : ' + data.errors[error_key];
+            	}
+            	data.errors = errors;
+            }
+            else {
+            	data.errors = '';
+            }
+
+            return JSON.stringify(data);
+          timeout: 15s
+          parameters:
+            - name: api_token
+              value: '{$JIRA.API_TOKEN}'
+            - name: base_url
+              value: '{$JIRA.BASE_URL}'
+            - name: email
+              value: '{$JIRA.EMAIL}'
+          tags:
+            - tag: component
+              value: raw
+        - uuid: 1c1be3d58638467db95cd19be04b0a71
+          name: 'High priority tickets - global'
+          type: CALCULATED
+          key: jira.tickets.highprioopen.total
+          delay: 1h
+          units: '!tickets'
+          params: 'sum(last_foreach(//jira.tickets.highprioopen[*]))'
+          tags:
+            - tag: project
+              value: global
+            - tag: tickets_status
+              value: highprioopen
+        - uuid: a1e35d3d458b4cb9b00932366965f4b7
+          name: 'New tickets - 7 days - global'
+          type: CALCULATED
+          key: jira.tickets.new7d.total
+          delay: 1h
+          units: '!tickets'
+          params: 'sum(last_foreach(//jira.tickets.new7d[*]))'
+          tags:
+            - tag: project
+              value: global
+            - tag: tickets_status
+              value: new7d
+        - uuid: f2e584240569468f985750a33a1a3548
+          name: 'Open tickets - global'
+          type: CALCULATED
+          key: jira.tickets.open.total
+          delay: 1h
+          units: '!tickets'
+          params: 'sum(last_foreach(//jira.tickets.open[*]))'
+          tags:
+            - tag: project
+              value: global
+            - tag: tickets_status
+              value: open
+        - uuid: ba1342f7fdb94e8682429557770ec2e2
+          name: '12 months old tickets - global'
+          type: CALCULATED
+          key: jira.tickets.opengt12m.total
+          delay: 1h
+          units: '!tickets'
+          params: 'sum(last_foreach(//jira.tickets.opengt12m[*]))'
+          tags:
+            - tag: project
+              value: global
+            - tag: tickets_status
+              value: opengt12m
+        - uuid: 9a696d5ca8a44a91807ebfb9cd75ef32
+          name: 'Overdue tickets - global'
+          type: CALCULATED
+          key: jira.tickets.overdue.total
+          delay: 1h
+          units: '!tickets'
+          params: 'sum(last_foreach(//jira.tickets.overdue[*]))'
+          tags:
+            - tag: project
+              value: global
+            - tag: tickets_status
+              value: overdue
+        - uuid: 000ecea810a04b4184048f1b306b7378
+          name: 'Resolved tickets - 7 days - global'
+          type: CALCULATED
+          key: jira.tickets.resolved_7d.total
+          delay: 1h
+          units: '!tickets'
+          params: 'sum(last_foreach(//jira.tickets.resolved_7d[*]))'
+          tags:
+            - tag: project
+              value: global
+            - tag: tickets_status
+              value: resolved_7d
+        - uuid: b0f40b05a79344f5bfcf0bef1368e66a
+          name: 'Unassigned tickets - global'
+          type: CALCULATED
+          key: jira.tickets.unassigned.total
+          delay: 1h
+          units: '!tickets'
+          params: 'sum(last_foreach(//jira.tickets.unassigned[*]))'
+          tags:
+            - tag: project
+              value: global
+            - tag: tickets_status
+              value: unassigned
+      discovery_rules:
+        - uuid: cf264a6d2f8f4c0d8359dd222e7b4b56
+          name: 'Jira project discovery'
+          type: SCRIPT
+          key: jira.project.discovery
+          delay: 1h
+          params: |
+            /*
+             * Zabbix master item (Script) - Découverte des PROJETS JIRA
+             *
+             * Rôle : alimenter la LLD "Projets Jira". Aucun filtre n'est appliqué ici :
+             * tous les projets du site sont remontés avec leur type. Le tri se fait
+             * côté Zabbix, dans les conditions de filtre de la règle de découverte
+             * (macros {$JIRA.PROJECT.*.MATCHES} / {$JIRA.PROJECT.*.NOT.MATCHES}).
+             *
+             * Paramètres attendus dans "value" (JSON), depuis les macros host :
+             * {
+             *   "base_url":  "{$JIRA.BASE_URL}",
+             *   "email":     "{$JIRA.EMAIL}",
+             *   "api_token": "{$JIRA.API_TOKEN}",
+             *   "proxy":     "" // optionnel
+             * }
+             *
+             * Sortie - volontairement épurée au strict nécessaire (pas de "self",
+             * avatarUrls, expand, etc.) et triée par "key" : c'est ce qui permet
+             * d'ajouter un preprocessing "Discard unchanged" en aval sans qu'il soit
+             * neutralisé par un ordre de tableau non déterministe côté API Jira.
+             * {
+             *   "errors": "",
+             *   "projects": [
+             *     { "id": "10020", "key": "DATA", "name": "DATA", "type": "business" },
+             *     ...
+             *   ]
+             * }
+             *
+             * Authentification : Basic Auth (email + API token classique, non scoped),
+             * via btoa() natif Duktape/Zabbix.
+             *
+             * Permissions nécessaires sur le compte Jira : "Browse Projects" (lecture
+             * seule) sur les projets à superviser.
+             *
+             * Endpoint utilisé : GET /rest/api/3/project/search. Pagination classique
+             * startAt/maxResults/isLast - non concerné par la dépréciation CHANGE-2046
+             * (qui ne touche que la recherche d'ISSUES, /search -> /search/jql).
+             */
+
+            var Jira = {
+            	params: {},
+            	base_url: null,
+            	auth_header: null,
+            	http: null,
+
+            	setParams: function (params) {
+            		['base_url', 'email', 'api_token'].forEach(function (field) {
+            			if (typeof params !== 'object' || typeof params[field] === 'undefined' || params[field] === '') {
+            				throw 'Required param is not set: ' + field + '.';
+            			}
+            		});
+
+            		Jira.params = params;
+            		Jira.base_url = params.base_url.replace(/\/+$/, ''); // retire le / final éventuel
+            		Jira.auth_header = 'Basic ' + btoa(params.email + ':' + params.api_token);
+
+            		Jira.http = new HttpRequest();
+            		if (typeof params.proxy !== 'undefined' && params.proxy !== '') {
+            			Jira.http.setProxy(params.proxy);
+            		}
+            	},
+
+            	request: function (path) {
+            		var url = Jira.base_url + path,
+            			response;
+
+            		Jira.http.clearHeader();
+            		Jira.http.addHeader('Authorization: ' + Jira.auth_header);
+            		Jira.http.addHeader('Accept: application/json');
+
+            		Zabbix.log(4, '[ Jira ] Sending request: GET ' + url);
+            		response = Jira.http.get(url);
+            		Zabbix.log(4, '[ Jira ] Received response with status code ' + Jira.http.getStatus() + ': ' + response);
+
+            		if (Jira.http.getStatus() === 401) {
+            			throw 'Unauthorized (401) on GET ' + path + '. Check email/api_token (compte, token expiré ou révoqué).';
+            		}
+            		if (Jira.http.getStatus() === 403) {
+            			throw 'Forbidden (403) on GET ' + path + '. Check account permissions (Browse Projects).';
+            		}
+            		if (Jira.http.getStatus() !== 200 || response === null) {
+            			throw 'Request failed with status code ' + Jira.http.getStatus() + ': ' + response;
+            		}
+
+            		try {
+            			return JSON.parse(response);
+            		}
+            		catch (error) {
+            			throw 'Failed to parse response received from API for ' + path + '.';
+            		}
+            	}
+            };
+
+            var data = { errors: {}, projects: [] };
+
+            try {
+            	Jira.setParams(JSON.parse(value));
+            }
+            catch (error) {
+            	data.errors.auth = error.toString();
+            }
+
+            if (!('auth' in data.errors)) {
+            	try {
+            		var start_at = 0,
+            			max_results = 50,
+            			is_last = false;
+
+            		while (!is_last) {
+            			var page = Jira.request('/rest/api/3/project/search?startAt=' + start_at + '&maxResults=' + max_results);
+
+            			(page.values || []).forEach(function (project) {
+            				data.projects.push({
+            					id: project.id,
+            					key: project.key,
+            					name: project.name,
+            					type: project.projectTypeKey
+            				});
+            			});
+
+            			is_last = (page.isLast === true) || !page.values || page.values.length === 0;
+            			start_at += max_results;
+            		}
+
+            		// Tri déterministe : indispensable pour que le preprocessing
+            		// "Discard unchanged" en aval compare des chaînes stables d'un
+            		// run à l'autre (l'API Jira ne garantit pas l'ordre de retour).
+            		data.projects.sort(function (a, b) {
+            			return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0);
+            		});
+            	}
+            	catch (error) {
+            		data.errors.projects = error.toString();
+            	}
+            }
+
+            if (Object.keys(data.errors).length !== 0) {
+            	var errors = 'Failed to receive data:';
+            	for (var error_key in data.errors) {
+            		errors += '\n' + error_key + ' : ' + data.errors[error_key];
+            	}
+            	data.errors = errors;
+            }
+            else {
+            	data.errors = '';
+            }
+
+            return JSON.stringify(data);
+          filter:
+            evaltype: AND
+            conditions:
+              - macro: '{#PROJECT.KEY}'
+                value: '{$JIRA.PROJECT.KEY.MATCHES}'
+              - macro: '{#PROJECT.KEY}'
+                value: '{$JIRA.PROJECT.KEY.NOT.MATCHES}'
+                operator: NOT_MATCHES_REGEX
+              - macro: '{#PROJECT.NAME}'
+                value: '{$JIRA.PROJECT.NAME.MATCHES}'
+              - macro: '{#PROJECT.NAME}'
+                value: '{$JIRA.PROJECT.NAME.NOT.MATCHES}'
+                operator: NOT_MATCHES_REGEX
+              - macro: '{#PROJECT.TYPE}'
+                value: '{$JIRA.PROJECT.TYPE.MATCHES}'
+              - macro: '{#PROJECT.TYPE}'
+                value: '{$JIRA.PROJECT.TYPE.NOT.MATCHES}'
+                operator: NOT_MATCHES_REGEX
+          lifetime: 30d
+          enabled_lifetime_type: DISABLE_AFTER
+          enabled_lifetime: 1d
+          item_prototypes:
+            - uuid: a1db84ffc5f2476693486751673a51d7
+              name: '3 to 6 months older for {#PROJECT.NAME}'
+              type: DEPENDENT
+              key: 'jira.tickets.age3to6m[{#PROJECT.KEY}]'
+              history: 30d
+              units: '!tickets'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.metrics[?(@.key==''{#PROJECT.KEY}'')].open_age_3_6m.first()'
+              master_item:
+                key: jira.tickets.data.raw
+              tags:
+                - tag: key
+                  value: '{{#PROJECT.KEY}.lowercase()}'
+                - tag: project
+                  value: '{{#PROJECT.NAME}.lowercase()}'
+                - tag: tickets_status
+                  value: age3to6m
+            - uuid: 3381b19bf5894beca12a342e9c9376fa
+              name: '6 to 12 months older for {#PROJECT.NAME}'
+              type: DEPENDENT
+              key: 'jira.tickets.age6to12m[{#PROJECT.KEY}]'
+              history: 30d
+              units: '!tickets'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.metrics[?(@.key==''{#PROJECT.KEY}'')].open_age_6_12m.first()'
+              master_item:
+                key: jira.tickets.data.raw
+              tags:
+                - tag: key
+                  value: '{{#PROJECT.KEY}.lowercase()}'
+                - tag: project
+                  value: '{{#PROJECT.NAME}.lowercase()}'
+                - tag: tickets_status
+                  value: age6to12m
+            - uuid: 8d38ce92078b46a4a672bf7c85edeff8
+              name: '0 to 3 months for {#PROJECT.NAME}'
+              type: DEPENDENT
+              key: 'jira.tickets.agelt3m[{#PROJECT.KEY}]'
+              history: 30d
+              units: '!tickets'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.metrics[?(@.key==''{#PROJECT.KEY}'')].open_age_lt_3m.first()'
+              master_item:
+                key: jira.tickets.data.raw
+              tags:
+                - tag: key
+                  value: '{{#PROJECT.KEY}.lowercase()}'
+                - tag: project
+                  value: '{{#PROJECT.NAME}.lowercase()}'
+                - tag: tickets_status
+                  value: agelt3m
+            - uuid: 16e3fd9c2ae24058a66d5b61c11e900a
+              name: 'Bugs open tickets for {#PROJECT.NAME}'
+              type: DEPENDENT
+              key: 'jira.tickets.bugs_open[{#PROJECT.KEY}]'
+              history: 30d
+              units: '!tickets'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.metrics[?(@.key==''{#PROJECT.KEY}'')].bugs_open.first()'
+              master_item:
+                key: jira.tickets.data.raw
+              tags:
+                - tag: key
+                  value: '{{#PROJECT.KEY}.lowercase()}'
+                - tag: project
+                  value: '{{#PROJECT.NAME}.lowercase()}'
+                - tag: tickets_status
+                  value: bugs_open
+            - uuid: 69cab93df9ef466897a66ec322b8cfb5
+              name: 'High priority open tickets for {#PROJECT.NAME}'
+              type: DEPENDENT
+              key: 'jira.tickets.highprioopen[{#PROJECT.KEY}]'
+              history: 30d
+              units: '!tickets'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.metrics[?(@.key==''{#PROJECT.KEY}'')].high_priority_open.first()'
+              master_item:
+                key: jira.tickets.data.raw
+              tags:
+                - tag: key
+                  value: '{{#PROJECT.KEY}.lowercase()}'
+                - tag: project
+                  value: '{{#PROJECT.NAME}.lowercase()}'
+                - tag: tickets_status
+                  value: highprioopen
+            - uuid: 49f9ebb4737542e0bce7c6d1535604a7
+              name: 'New tickets for {#PROJECT.NAME} (7 days)'
+              type: DEPENDENT
+              key: 'jira.tickets.new7d[{#PROJECT.KEY}]'
+              history: 30d
+              units: '!tickets'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.metrics[?(@.key==''{#PROJECT.KEY}'')].new_7d.first()'
+              master_item:
+                key: jira.tickets.data.raw
+              tags:
+                - tag: key
+                  value: '{{#PROJECT.KEY}.lowercase()}'
+                - tag: project
+                  value: '{{#PROJECT.NAME}.lowercase()}'
+                - tag: tickets_status
+                  value: new_7d
+            - uuid: c3d898e010e94e40b91069e0ae09baa0
+              name: 'Average age for {#PROJECT.NAME}'
+              type: DEPENDENT
+              key: 'jira.tickets.openavgage[{#PROJECT.KEY}]'
+              history: 30d
+              units: uptime
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.metrics[?(@.key==''{#PROJECT.KEY}'')].open_avg_age_seconds.first()'
+              master_item:
+                key: jira.tickets.data.raw
+              tags:
+                - tag: key
+                  value: '{{#PROJECT.KEY}.lowercase()}'
+                - tag: project
+                  value: '{{#PROJECT.NAME}.lowercase()}'
+                - tag: tickets_status
+                  value: openavgage
+            - uuid: 157766d0547e41a1ac0f61b0a2530d40
+              name: '12 months or more older for {#PROJECT.NAME}'
+              type: DEPENDENT
+              key: 'jira.tickets.opengt12m[{#PROJECT.KEY}]'
+              history: 30d
+              units: '!tickets'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.metrics[?(@.key==''{#PROJECT.KEY}'')].open_age_gt_12m.first()'
+              master_item:
+                key: jira.tickets.data.raw
+              tags:
+                - tag: key
+                  value: '{{#PROJECT.KEY}.lowercase()}'
+                - tag: project
+                  value: '{{#PROJECT.NAME}.lowercase()}'
+                - tag: tickets_status
+                  value: opengt12m
+            - uuid: b0c9ed8029ce4eefa9d95ddc058f184d
+              name: 'Open tickets for {#PROJECT.NAME}'
+              type: DEPENDENT
+              key: 'jira.tickets.open[{#PROJECT.KEY}]'
+              history: 30d
+              units: '!tickets'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.metrics[?(@.key==''{#PROJECT.KEY}'')].open.first()'
+              master_item:
+                key: jira.tickets.data.raw
+              tags:
+                - tag: key
+                  value: '{{#PROJECT.KEY}.lowercase()}'
+                - tag: project
+                  value: '{{#PROJECT.NAME}.lowercase()}'
+                - tag: tickets_status
+                  value: open
+            - uuid: 07c657c14796413ab5bae11c967f203d
+              name: 'Overdue tickets for {#PROJECT.NAME}'
+              type: DEPENDENT
+              key: 'jira.tickets.overdue[{#PROJECT.KEY}]'
+              history: 30d
+              units: '!tickets'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.metrics[?(@.key==''{#PROJECT.KEY}'')].overdue.first()'
+              master_item:
+                key: jira.tickets.data.raw
+              tags:
+                - tag: key
+                  value: '{{#PROJECT.KEY}.lowercase()}'
+                - tag: project
+                  value: '{{#PROJECT.NAME}.lowercase()}'
+                - tag: tickets_status
+                  value: overdue
+            - uuid: 7aa1f8c116d349d3b76bc7d9d8f622f7
+              name: 'Resolved tickets for {#PROJECT.NAME} (7 days)'
+              type: DEPENDENT
+              key: 'jira.tickets.resolved_7d[{#PROJECT.KEY}]'
+              history: 30d
+              units: '!tickets'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.metrics[?(@.key==''{#PROJECT.KEY}'')].resolved_7d.first()'
+              master_item:
+                key: jira.tickets.data.raw
+              tags:
+                - tag: key
+                  value: '{{#PROJECT.KEY}.lowercase()}'
+                - tag: project
+                  value: '{{#PROJECT.NAME}.lowercase()}'
+                - tag: tickets_status
+                  value: resolved_7d
+            - uuid: 97a4adba24f3496281aaa8730b557f16
+              name: 'Unassigned tickets for {#PROJECT.NAME}'
+              type: DEPENDENT
+              key: 'jira.tickets.unassigned[{#PROJECT.KEY}]'
+              history: 30d
+              units: '!tickets'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.metrics[?(@.key==''{#PROJECT.KEY}'')].unassigned.first()'
+              master_item:
+                key: jira.tickets.data.raw
+              tags:
+                - tag: key
+                  value: '{{#PROJECT.KEY}.lowercase()}'
+                - tag: project
+                  value: '{{#PROJECT.NAME}.lowercase()}'
+                - tag: tickets_status
+                  value: unassigned
+          graph_prototypes:
+            - uuid: e67f76a686104d2d92f862020a646a99
+              name: 'New / Resolved tickets for {#PROJECT.NAME} (7 days)'
+              yaxismax: '0'
+              graph_items:
+                - color: FFA726
+                  calc_fnc: MAX
+                  item:
+                    host: 'Jira cloud projects overview - jLepage'
+                    key: 'jira.tickets.new7d[{#PROJECT.KEY}]'
+                - sortorder: '1'
+                  color: '009688'
+                  calc_fnc: MAX
+                  item:
+                    host: 'Jira cloud projects overview - jLepage'
+                    key: 'jira.tickets.resolved_7d[{#PROJECT.KEY}]'
+            - uuid: e6c13baa14a34c8c9788c50b1bcf72fb
+              name: 'Ticket by age for {#PROJECT.NAME}'
+              show_work_period: 'NO'
+              show_triggers: 'NO'
+              type: EXPLODED
+              graph_items:
+                - color: C5E1A5
+                  calc_fnc: LAST
+                  item:
+                    host: 'Jira cloud projects overview - jLepage'
+                    key: 'jira.tickets.agelt3m[{#PROJECT.KEY}]'
+                - sortorder: '1'
+                  color: 90CAF9
+                  calc_fnc: LAST
+                  item:
+                    host: 'Jira cloud projects overview - jLepage'
+                    key: 'jira.tickets.age3to6m[{#PROJECT.KEY}]'
+                - sortorder: '2'
+                  color: FFCC80
+                  calc_fnc: LAST
+                  item:
+                    host: 'Jira cloud projects overview - jLepage'
+                    key: 'jira.tickets.age6to12m[{#PROJECT.KEY}]'
+                - sortorder: '3'
+                  color: F06292
+                  calc_fnc: LAST
+                  item:
+                    host: 'Jira cloud projects overview - jLepage'
+                    key: 'jira.tickets.opengt12m[{#PROJECT.KEY}]'
+          parameters:
+            - name: api_token
+              value: '{$JIRA.API_TOKEN}'
+            - name: base_url
+              value: '{$JIRA.BASE_URL}'
+            - name: email
+              value: '{$JIRA.EMAIL}'
+          lld_macro_paths:
+            - lld_macro: '{#PROJECT.ID}'
+              path: $.id
+            - lld_macro: '{#PROJECT.KEY}'
+              path: $.key
+            - lld_macro: '{#PROJECT.NAME}'
+              path: $.name
+            - lld_macro: '{#PROJECT.TYPE}'
+              path: $.type
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.projects
+      tags:
+        - tag: application
+          value: jira
+      macros:
+        - macro: '{$JIRA.API_TOKEN}'
+          value: '<change me>'
+        - macro: '{$JIRA.BASE_URL}'
+          value: 'https://<workspace>.atlassian.net'
+        - macro: '{$JIRA.EMAIL}'
+          value: 'name@corporate.com'
+        - macro: '{$JIRA.PROJECT.KEY.MATCHES}'
+          value: '.*'
+        - macro: '{$JIRA.PROJECT.KEY.NOT.MATCHES}'
+          value: '<change me>'
+        - macro: '{$JIRA.PROJECT.NAME.MATCHES}'
+          value: '.*'
+        - macro: '{$JIRA.PROJECT.NAME.NOT.MATCHES}'
+          value: '<change me>'
+        - macro: '{$JIRA.PROJECT.TYPE.MATCHES}'
+          value: '.*'
+        - macro: '{$JIRA.PROJECT.TYPE.NOT.MATCHES}'
+          value: '<change me>'
+      dashboards:
+        - uuid: df2e3477b43d4a5abd2e93b1c997b277
+          name: 'Jira overview'
+          pages:
+            - name: Overview
+              widgets:
+                - type: piechart
+                  name: 'Open tickets per project'
+                  width: '24'
+                  height: '5'
+                  fields:
+                    - type: INTEGER
+                      name: decimal_places
+                      value: '0'
+                    - type: INTEGER
+                      name: draw_type
+                      value: '1'
+                    - type: INTEGER
+                      name: ds.0.aggregate_function
+                      value: '2'
+                    - type: INTEGER
+                      name: ds.0.color_palette
+                      value: '7'
+                    - type: STRING
+                      name: ds.0.items.0
+                      value: 'Open tickets for *'
+                    - type: INTEGER
+                      name: legend_lines
+                      value: '10'
+                    - type: INTEGER
+                      name: legend_lines_mode
+                      value: '1'
+                    - type: INTEGER
+                      name: legend_value
+                      value: '1'
+                    - type: INTEGER
+                      name: space
+                      value: '3'
+                    - type: INTEGER
+                      name: stroke
+                      value: '3'
+                    - type: INTEGER
+                      name: total_show
+                      value: '1'
+                    - type: INTEGER
+                      name: value_bold
+                      value: '1'
+                - type: piechart
+                  name: 'Overdue tickets per project'
+                  'y': '5'
+                  width: '24'
+                  height: '5'
+                  fields:
+                    - type: INTEGER
+                      name: decimal_places
+                      value: '0'
+                    - type: INTEGER
+                      name: draw_type
+                      value: '1'
+                    - type: INTEGER
+                      name: ds.0.aggregate_function
+                      value: '2'
+                    - type: INTEGER
+                      name: ds.0.color_palette
+                      value: '2'
+                    - type: STRING
+                      name: ds.0.items.0
+                      value: 'Overdue tickets for *'
+                    - type: INTEGER
+                      name: legend_lines
+                      value: '10'
+                    - type: INTEGER
+                      name: legend_lines_mode
+                      value: '1'
+                    - type: INTEGER
+                      name: legend_value
+                      value: '1'
+                    - type: INTEGER
+                      name: space
+                      value: '3'
+                    - type: INTEGER
+                      name: stroke
+                      value: '3'
+                    - type: INTEGER
+                      name: total_show
+                      value: '1'
+                    - type: INTEGER
+                      name: value_bold
+                      value: '1'
+                - type: graph
+                  'y': '10'
+                  width: '36'
+                  height: '5'
+                  fields:
+                    - type: STRING
+                      name: reference
+                      value: WFDMH
+                - type: honeycomb
+                  name: 'Overdue tickets per project'
+                  x: '25'
+                  width: '23'
+                  height: '5'
+                  fields:
+                    - type: STRING
+                      name: items.0
+                      value: '* tickets for *'
+                    - type: INTEGER
+                      name: item_tags.0.operator
+                      value: '0'
+                    - type: STRING
+                      name: item_tags.0.tag
+                      value: tickets_status
+                    - type: STRING
+                      name: item_tags.0.value
+                      value: overdue
+                    - type: STRING
+                      name: primary_label
+                      value: '{{ITEM.NAME}.regsub("^(.*) tickets for (.*)$","Project \2")}'
+                    - type: STRING
+                      name: reference
+                      value: TPKIS
+                    - type: INTEGER
+                      name: secondary_label_decimal_places
+                      value: '0'
+                    - type: STRING
+                      name: thresholds.0.color
+                      value: 3BC97D
+                    - type: STRING
+                      name: thresholds.0.threshold
+                      value: '0'
+                    - type: STRING
+                      name: thresholds.1.color
+                      value: FCCB1D
+                    - type: STRING
+                      name: thresholds.1.threshold
+                      value: '10'
+                    - type: STRING
+                      name: thresholds.2.color
+                      value: E65660
+                    - type: STRING
+                      name: thresholds.2.threshold
+                      value: '20'
+                - type: honeycomb
+                  name: 'Unassigned tickets per project'
+                  x: '25'
+                  'y': '5'
+                  width: '23'
+                  height: '5'
+                  fields:
+                    - type: STRING
+                      name: items.0
+                      value: '* tickets for *'
+                    - type: INTEGER
+                      name: item_tags.0.operator
+                      value: '0'
+                    - type: STRING
+                      name: item_tags.0.tag
+                      value: tickets_status
+                    - type: STRING
+                      name: item_tags.0.value
+                      value: unassigned
+                    - type: STRING
+                      name: primary_label
+                      value: '{{ITEM.NAME}.regsub("^(.*) tickets for (.*)$","Project \2")}'
+                    - type: STRING
+                      name: reference
+                      value: NXFDX
+                    - type: INTEGER
+                      name: secondary_label_decimal_places
+                      value: '0'
+                    - type: STRING
+                      name: thresholds.0.color
+                      value: 3BC97D
+                    - type: STRING
+                      name: thresholds.0.threshold
+                      value: '0'
+                    - type: STRING
+                      name: thresholds.1.color
+                      value: FCCB1D
+                    - type: STRING
+                      name: thresholds.1.threshold
+                      value: '10'
+                    - type: STRING
+                      name: thresholds.2.color
+                      value: E65660
+                    - type: STRING
+                      name: thresholds.2.threshold
+                      value: '20'
+                - type: graph
+                  x: '36'
+                  'y': '10'
+                  width: '36'
+                  height: '5'
+                  fields:
+                    - type: STRING
+                      name: reference
+                      value: DFTEU
+                - type: honeycomb
+                  name: 'Average age per project'
+                  x: '49'
+                  width: '23'
+                  height: '5'
+                  fields:
+                    - type: STRING
+                      name: items.0
+                      value: 'Average age for *'
+                    - type: INTEGER
+                      name: item_tags.0.operator
+                      value: '0'
+                    - type: STRING
+                      name: item_tags.0.tag
+                      value: tickets_status
+                    - type: STRING
+                      name: item_tags.0.value
+                      value: openavgage
+                    - type: STRING
+                      name: primary_label
+                      value: '{{ITEM.NAME}.regsub("^Average age for (.*)$","Project \1")}'
+                    - type: STRING
+                      name: reference
+                      value: OIGNX
+                    - type: INTEGER
+                      name: secondary_label_decimal_places
+                      value: '0'
+                    - type: STRING
+                      name: thresholds.0.color
+                      value: 2ED3B7
+                    - type: STRING
+                      name: thresholds.0.threshold
+                      value: '0'
+                    - type: STRING
+                      name: thresholds.1.color
+                      value: 3BC97D
+                    - type: STRING
+                      name: thresholds.1.threshold
+                      value: 60d
+                    - type: STRING
+                      name: thresholds.2.color
+                      value: FCCB1D
+                    - type: STRING
+                      name: thresholds.2.threshold
+                      value: 180d
+                    - type: STRING
+                      name: thresholds.3.color
+                      value: E65660
+                    - type: STRING
+                      name: thresholds.3.threshold
+                      value: 365d
+                - type: honeycomb
+                  name: 'High priority tickets per project'
+                  x: '49'
+                  'y': '5'
+                  width: '23'
+                  height: '5'
+                  fields:
+                    - type: STRING
+                      name: items.0
+                      value: '* tickets for *'
+                    - type: INTEGER
+                      name: item_tags.0.operator
+                      value: '0'
+                    - type: STRING
+                      name: item_tags.0.tag
+                      value: tickets_status
+                    - type: STRING
+                      name: item_tags.0.value
+                      value: highprioopen
+                    - type: STRING
+                      name: primary_label
+                      value: '{{ITEM.NAME}.regsub("^(.*) tickets for (.*)$","Project \2")}'
+                    - type: STRING
+                      name: reference
+                      value: VVXOG
+                    - type: INTEGER
+                      name: secondary_label_decimal_places
+                      value: '0'
+                    - type: STRING
+                      name: thresholds.0.color
+                      value: 3BC97D
+                    - type: STRING
+                      name: thresholds.0.threshold
+                      value: '0'
+                    - type: STRING
+                      name: thresholds.1.color
+                      value: FCCB1D
+                    - type: STRING
+                      name: thresholds.1.threshold
+                      value: '10'
+                    - type: STRING
+                      name: thresholds.2.color
+                      value: E65660
+                    - type: STRING
+                      name: thresholds.2.threshold
+                      value: '20'
+            - name: 'Tickets age per project'
+              widgets:
+                - type: graphprototype
+                  name: 'Tickets by age'
+                  width: '72'
+                  height: '12'
+                  fields:
+                    - type: INTEGER
+                      name: columns
+                      value: '3'
+                    - type: GRAPH_PROTOTYPE
+                      name: graphid.0
+                      value:
+                        host: 'Jira cloud projects overview - jLepage'
+                        name: 'Ticket by age for {#PROJECT.NAME}'
+                    - type: STRING
+                      name: reference
+                      value: YLWXG
+                    - type: INTEGER
+                      name: rows
+                      value: '2'
+            - name: 'New vs Resolved'
+              widgets:
+                - type: graphprototype
+                  name: 'New vs Resolved (7 days)'
+                  width: '72'
+                  height: '16'
+                  fields:
+                    - type: GRAPH_PROTOTYPE
+                      name: graphid.0
+                      value:
+                        host: 'Jira cloud projects overview - jLepage'
+                        name: 'New / Resolved tickets for {#PROJECT.NAME} (7 days)'
+                    - type: STRING
+                      name: reference
+                      value: QBHHZ
+                    - type: INTEGER
+                      name: rows
+                      value: '3'

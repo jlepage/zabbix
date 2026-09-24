@@ -1,0 +1,172 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: cbf1b21ad0b44dfba6f127410a464e7a
+      name: Applications
+  templates:
+    - uuid: b6cb61ff4e7b4eebbd6fef13cb82819a
+      template: 'Overview by Tags'
+      name: 'Overview by Tags'
+      vendor:
+        name: jLepage
+        version: 7.4-1
+      groups:
+        - name: Applications
+      items:
+        - uuid: 8b46d99fb5b249918a675e783a153c60
+          name: 'Raw Json Data'
+          type: CALCULATED
+          key: overview.raw
+          delay: 1h
+          value_type: TEXT
+          params: 'concat("[", "{\"{#TAG.KEY}\": \"provider\",\"{#TAG.VALUE}\": \"OVH\"},{\"{#TAG.KEY}\": \"provider\",\"{#TAG.VALUE}\": \"AWS\"}", "]")'
+      discovery_rules:
+        - uuid: 919c1d6a43af4405a4ea93a14e6d08db
+          name: 'Overview by tags'
+          type: DEPENDENT
+          key: overview.discovery.lld
+          item_prototypes:
+            - uuid: 7050bcbbd7294276846dbaf3702e744f
+              name: 'Number of vCPU for {#TAG.KEY} {#TAG.VALUE}'
+              type: CALCULATED
+              key: 'overview.tags.cpu.total["{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]'
+              delay: 3h
+              history: 7d
+              value_type: FLOAT
+              units: '!vCPU'
+              params: 'sum(last_foreach(/*/system.cpu.num?[tag="{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]))'
+              tags:
+                - tag: component
+                  value: cpu
+                - tag: type
+                  value: total
+                - tag: '{{#TAG.KEY}.lowercase()}'
+                  value: '{{#TAG.VALUE}.lowercase()}'
+            - uuid: aba87e42771d46cbba8a8c3da6d64be9
+              name: 'Average usage of vCPU {#TAG.KEY} {#TAG.VALUE}'
+              type: CALCULATED
+              key: 'overview.tags.cpu.usage["{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]'
+              history: 7d
+              value_type: FLOAT
+              units: '!%'
+              params: '(sum(last_foreach(/*/system.cpu.load[all,avg1]?[tag="{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"])) / sum(last_foreach(/*/system.cpu.num?[tag="{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"])))*100'
+              tags:
+                - tag: component
+                  value: cpu
+                - tag: type
+                  value: usage
+                - tag: '{{#TAG.KEY}.lowercase()}'
+                  value: '{{#TAG.VALUE}.lowercase()}'
+            - uuid: c5c2477ed4d44ed7b5f20477973a3d61
+              name: 'Usage % of disk space for {#TAG.KEY} {#TAG.VALUE}'
+              type: CALCULATED
+              key: 'overview.tags.disk.pusage["{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]'
+              history: 7d
+              value_type: FLOAT
+              units: '!%'
+              params: '(last(//overview.tags.disk.usage["{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"])/last(//overview.tags.disk.total["{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]))*100'
+              tags:
+                - tag: component
+                  value: disk
+                - tag: type
+                  value: pusage
+                - tag: '{{#TAG.KEY}.lowercase()}'
+                  value: '{{#TAG.VALUE}.lowercase()}'
+            - uuid: a1b33873b63c4a71874cd79a8e89952d
+              name: 'Usage of disk space for {#TAG.KEY} {#TAG.VALUE}'
+              type: CALCULATED
+              key: 'overview.tags.disk.usage["{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]'
+              history: 7d
+              value_type: FLOAT
+              units: B
+              params: 'sum(last_foreach(/*/vfs.fs.dependent.size[*,used]?[tag="{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]))+sum(last_foreach(/*/vfs.fs.size[*,used]?[tag="{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]))'
+              tags:
+                - tag: component
+                  value: disk
+                - tag: type
+                  value: usage
+                - tag: '{{#TAG.KEY}.lowercase()}'
+                  value: '{{#TAG.VALUE}.lowercase()}'
+            - uuid: b07e535cccf74aada983d43b6809f2ed
+              name: 'Number of hosts for {#TAG.KEY} {#TAG.VALUE}'
+              type: CALCULATED
+              key: 'overview.tags.hosts.total["{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]'
+              delay: 3h
+              history: 7d
+              value_type: FLOAT
+              units: '!hosts'
+              params: 'sum(last_foreach(/*/agent.ping?[tag="{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]))'
+              tags:
+                - tag: component
+                  value: hosts
+                - tag: type
+                  value: total
+                - tag: '{{#TAG.KEY}.lowercase()}'
+                  value: '{{#TAG.VALUE}.lowercase()}'
+            - uuid: 9dae91e4c228424ba28f5c73b3d52b87
+              name: 'Usage % of memory for {#TAG.KEY} {#TAG.VALUE}'
+              type: CALCULATED
+              key: 'overview.tags.memory.pusage["{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]'
+              history: 7d
+              value_type: FLOAT
+              units: '!%'
+              params: '(last(//overview.tags.memory.usage["{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"])/last(//overview.tags.memory.total["{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]))*100'
+              tags:
+                - tag: component
+                  value: memory
+                - tag: type
+                  value: pusage
+                - tag: '{{#TAG.KEY}.lowercase()}'
+                  value: '{{#TAG.VALUE}.lowercase()}'
+            - uuid: 6fd10e72bafb4d22a774d6ca75aef52a
+              name: 'Amount of memory for {#TAG.KEY} {#TAG.VALUE}'
+              type: CALCULATED
+              key: 'overview.tags.memory.total["{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]'
+              delay: 3h
+              history: 7d
+              value_type: FLOAT
+              units: B
+              params: 'sum(last_foreach(/*/vm.memory.size[total]?[tag="{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]))'
+              tags:
+                - tag: component
+                  value: memory
+                - tag: type
+                  value: total
+                - tag: '{{#TAG.KEY}.lowercase()}'
+                  value: '{{#TAG.VALUE}.lowercase()}'
+            - uuid: cbce9e14ee66429d8922b8048ee7130d
+              name: 'Usage of memory for {#TAG.KEY} {#TAG.VALUE}'
+              type: CALCULATED
+              key: 'overview.tags.memory.usage["{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]'
+              history: 7d
+              value_type: FLOAT
+              units: B
+              params: 'sum(last_foreach(/*/vm.memory.size[total]?[tag="{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"])) - sum(last_foreach(/*/vm.memory.size[available]?[tag="{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]))'
+              tags:
+                - tag: component
+                  value: memory
+                - tag: type
+                  value: usage
+                - tag: '{{#TAG.KEY}.lowercase()}'
+                  value: '{{#TAG.VALUE}.lowercase()}'
+            - uuid: 725716de07664fd8aea5f5cefd3e0bfe
+              name: 'Amount of disk space for {#TAG.KEY} {#TAG.VALUE}'
+              type: CALCULATED
+              key: 'overview.tags.vfs["{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]'
+              delay: '3h;1d/6-7,00:00-24:00'
+              history: 7d
+              value_type: FLOAT
+              units: B
+              params: |
+                sum(last_foreach(/*/vfs.fs.dependent.size[*,total]?[tag="{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]))
+                +
+                sum(last_foreach(/*/vfs.fs.size[*,total]?[tag="{{#TAG.KEY}.lowercase()}:{{#TAG.VALUE}.lowercase()}"]))
+              tags:
+                - tag: component
+                  value: disk
+                - tag: type
+                  value: total
+                - tag: '{{#TAG.KEY}.lowercase()}'
+                  value: '{{#TAG.VALUE}.lowercase()}'
+          master_item:
+            key: overview.raw
