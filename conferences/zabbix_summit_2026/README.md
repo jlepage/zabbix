@@ -49,6 +49,15 @@ sum(last_foreach(/*/vfs.fs.dependent.size[*,used]?[tag="u_key:u_value"]))
 sum(last_foreach(/*/vfs.fs.size[*,used]?[tag="u_key:u_value"]))
 ```
 
+**String concatenation**
+```
+concat(
+    last(//system.cpu.num), " vCPU - ",
+    round(last(//vm.memory.size[total]) / 1G, 2), " Go RAM - ",
+    round(sum(last_foreach(//vfs.fs.size[/,total])) + sum(last_foreach(//vfs.fs.dependant.size[/,total])) / 1G, 2), " Go Hdd"
+)
+```
+
 You can also use my "ready to use" template : [Overview by tags template](https://github.com/jlepage/zabbix/tree/main/templates/7.4/Overview_by_tags)
 
 .
