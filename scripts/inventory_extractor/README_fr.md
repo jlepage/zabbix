@@ -56,3 +56,11 @@ transform.py          Transformation host brut -> ligne de sortie
 writer.py             Écriture CSV / Excel
 main.py               Orchestration
 ```
+
+.
+
+## Copyrights
+
+.
+
+Copyrights [jLepage - Zabbix Certified Trainer](https://formation.jlepage.fr/formation/zabbix/formations-zabbix-l-outil-opensource-de-monitoring) / [jLepage blog](https://www.jlepage.blog)

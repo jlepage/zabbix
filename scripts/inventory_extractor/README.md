@@ -140,3 +140,11 @@ transform.py          raw host to output row
 writer.py             CSV / Excel writing
 main.py               entry point
 ```
+
+.
+
+## Copyrights
+
+.
+
+Copyrights [jLepage - Zabbix Certified Trainer](https://formation.jlepage.fr/formation/zabbix/formations-zabbix-l-outil-opensource-de-monitoring) / [jLepage blog](https://www.jlepage.blog)
