@@ -1,0 +1,334 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: c40eb5d7b4cf4d53abd8d75958cadd95
+      name: 'Templates/Space weather'
+  templates:
+    - uuid: cae15ec28e6f486d86f9da9685dc1e63
+      template: 'NOAA Space Weather Kp by HTTP'
+      name: 'NOAA Space Weather Kp by HTTP'
+      description: |
+        Surveillance de l'activité géomagnétique (indice planétaire Kp) via l'API publique NOAA SWPC.
+        Source : https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json
+        - 1 seul appel HTTP (item maître), normalisé en JSON compact par JavaScript.
+        - Les items dépendants extraient Kp, A running, stations, échelle G (NOAA), âge des données.
+        - Compatible avec l'ancien format NOAA (tableau de tableaux avec en-tête) et le format actuel (tableau d'objets).
+        Aucune interface ni agent requis : lier le template à un hôte "virtuel" (ex. "NOAA SWPC").
+      groups:
+        - name: 'Templates/Space weather'
+      items:
+        - uuid: 43645f5e849c4aa19104499536f5d00a
+          name: 'NOAA: Indice A (running)'
+          type: DEPENDENT
+          key: noaa.kp.a_running
+          history: 365d
+          description: 'Indice planétaire a (ap) équivalent linéaire du Kp.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.a_running
+          master_item:
+            key: noaa.kp.summary
+          tags:
+            - tag: component
+              value: geomagnetic
+        - uuid: 3a6014570c344462b5bdd7c77499d2a6
+          name: 'NOAA: Indice Kp'
+          type: DEPENDENT
+          key: noaa.kp.current
+          history: 365d
+          value_type: FLOAT
+          description: 'Dernier indice planétaire Kp (0 à 9, par pas de 1/3). Intervalles de 3h UTC.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.kp
+          master_item:
+            key: noaa.kp.summary
+          tags:
+            - tag: component
+              value: geomagnetic
+        - uuid: 617e0bb2daec49d5974d13e3ee84973e
+          name: 'NOAA: Âge des données'
+          type: DEPENDENT
+          key: noaa.kp.data_age
+          history: 7d
+          units: s
+          description: 'Temps écoulé depuis le début de l''intervalle de la dernière valeur (normalement < 3h30).'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.data_age
+          master_item:
+            key: noaa.kp.summary
+          tags:
+            - tag: component
+              value: quality
+          triggers:
+            - uuid: 6f2af5ee69f84d39a8379f956e356f4b
+              expression: 'last(/NOAA Space Weather Kp by HTTP/noaa.kp.data_age)>{$NOAA.DATA.MAXAGE}'
+              name: 'NOAA: Données Kp périmées (dernière mesure il y a {ITEM.LASTVALUE})'
+              priority: WARNING
+              description: 'L''API répond mais ne publie plus de nouvelles valeurs.'
+              dependencies:
+                - name: 'NOAA: Aucune donnée reçue de l''API depuis {$NOAA.NODATA}'
+                  expression: 'nodata(/NOAA Space Weather Kp by HTTP/noaa.kp.summary,{$NOAA.NODATA})=1'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: e43c5afe2c1b4079882ab287fdad9218
+          name: 'NOAA: Échelle G (tempête géomagnétique)'
+          type: DEPENDENT
+          key: noaa.kp.gscale
+          history: 365d
+          description: 'Échelle NOAA G0-G5 calculée depuis le Kp courant.'
+          valuemap:
+            name: 'NOAA G-scale'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.g_scale
+          master_item:
+            key: noaa.kp.summary
+          tags:
+            - tag: component
+              value: geomagnetic
+          triggers:
+            - uuid: 2e668f3fc14a4582a968f757dbffb604
+              expression: 'last(/NOAA Space Weather Kp by HTTP/noaa.kp.gscale)>={$NOAA.G.WARN}'
+              name: 'NOAA: Tempête géomagnétique en cours ({ITEM.LASTVALUE})'
+              opdata: 'Kp: {?last(/NOAA Space Weather Kp by HTTP/noaa.kp.current)}'
+              priority: WARNING
+              description: 'G1-G2 : perturbations mineures (HF, GNSS dégradé aux hautes latitudes, aurores).'
+              dependencies:
+                - name: 'NOAA: Tempête géomagnétique forte ({ITEM.LASTVALUE})'
+                  expression: 'last(/NOAA Space Weather Kp by HTTP/noaa.kp.gscale)>={$NOAA.G.HIGH}'
+              tags:
+                - tag: scope
+                  value: notice
+            - uuid: 86a122ee047c41fb8da8d5be6c2296f9
+              expression: 'last(/NOAA Space Weather Kp by HTTP/noaa.kp.gscale)>={$NOAA.G.HIGH}'
+              name: 'NOAA: Tempête géomagnétique forte ({ITEM.LASTVALUE})'
+              opdata: 'Kp: {?last(/NOAA Space Weather Kp by HTTP/noaa.kp.current)}'
+              priority: HIGH
+              description: 'G3 : impacts possibles sur GNSS, communications HF, réseaux électriques et satellites.'
+              dependencies:
+                - name: 'NOAA: Tempête géomagnétique sévère/extrême ({ITEM.LASTVALUE})'
+                  expression: 'last(/NOAA Space Weather Kp by HTTP/noaa.kp.gscale)>={$NOAA.G.DISASTER}'
+              tags:
+                - tag: scope
+                  value: notice
+            - uuid: 2b6b02a7acbb415cb182e3fdbbc5fbce
+              expression: 'last(/NOAA Space Weather Kp by HTTP/noaa.kp.gscale)>={$NOAA.G.DISASTER}'
+              name: 'NOAA: Tempête géomagnétique sévère/extrême ({ITEM.LASTVALUE})'
+              opdata: 'Kp: {?last(/NOAA Space Weather Kp by HTTP/noaa.kp.current)}'
+              priority: DISASTER
+              description: 'G4-G5 : impacts majeurs possibles (GNSS indisponible, HF coupée, risques réseaux électriques).'
+              tags:
+                - tag: scope
+                  value: notice
+        - uuid: 2aaae8b5717440a49259ddc286c65b51
+          name: 'NOAA: Échelle G max 24h'
+          type: DEPENDENT
+          key: noaa.kp.gscale.max24h
+          history: 365d
+          valuemap:
+            name: 'NOAA G-scale'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.g_scale_max_24h
+          master_item:
+            key: noaa.kp.summary
+          tags:
+            - tag: component
+              value: geomagnetic
+        - uuid: f9b4fc2670ed42668adc7f1336114021
+          name: 'NOAA: Indice Kp max 24h'
+          type: DEPENDENT
+          key: noaa.kp.max24h
+          history: 365d
+          value_type: FLOAT
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.kp_max_24h
+          master_item:
+            key: noaa.kp.summary
+          tags:
+            - tag: component
+              value: geomagnetic
+        - uuid: 81399c8c244a4269b6e285f4485aea98
+          name: 'NOAA: Nombre de stations'
+          type: DEPENDENT
+          key: noaa.kp.station_count
+          history: 90d
+          description: 'Nombre de magnétomètres utilisés pour le calcul (8 = mesure complète).'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.station_count
+          master_item:
+            key: noaa.kp.summary
+          tags:
+            - tag: component
+              value: quality
+        - uuid: ff9843d0311e43c4a3ac00f44e0ee7e5
+          name: 'NOAA: Kp - données brutes (résumé)'
+          type: HTTP_AGENT
+          key: noaa.kp.summary
+          delay: '{$NOAA.INTERVAL}'
+          history: '0'
+          value_type: TEXT
+          description: 'Item maître. Récupère le JSON NOAA et le réduit au dernier enregistrement + agrégats 24h.'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  if (!Array.isArray(d) || d.length === 0) {
+                      throw 'Réponse NOAA vide ou invalide';
+                  }
+                  // Normalisation : ancien format [[header],[row]...] ou nouveau [{...},{...}]
+                  var rows = d;
+                  if (Array.isArray(d[0])) {
+                      var h = d[0];
+                      rows = [];
+                      for (var i = 1; i < d.length; i++) {
+                          var o = {};
+                          for (var j = 0; j < h.length; j++) { o[h[j]] = d[i][j]; }
+                          rows.push(o);
+                      }
+                  }
+                  if (rows.length === 0) { throw 'Aucune ligne de données'; }
+                  
+                  var last = rows[rows.length - 1];
+                  var kp = parseFloat(last.Kp);
+                  if (isNaN(kp)) { throw 'Valeur Kp invalide : ' + last.Kp; }
+                  
+                  // Kp max sur les 8 derniers intervalles de 3h = 24h
+                  var max24 = kp;
+                  for (var k = Math.max(0, rows.length - 8); k < rows.length; k++) {
+                      var v = parseFloat(rows[k].Kp);
+                      if (!isNaN(v) && v > max24) { max24 = v; }
+                  }
+                  
+                  // Échelle G NOAA : Kp 5 (5-,5o,5+) = G1 ... Kp 9 = G5
+                  function gscale(x) {
+                      var g = Math.round(x) - 4;
+                      return g < 0 ? 0 : (g > 5 ? 5 : g);
+                  }
+                  
+                  // time_tag en UTC sans suffixe -> on ajoute 'Z'
+                  var ts = Date.parse(String(last.time_tag).replace(' ', 'T') + 'Z');
+                  if (isNaN(ts)) { throw 'time_tag invalide : ' + last.time_tag; }
+                  
+                  return JSON.stringify({
+                      time_tag: last.time_tag,
+                      time_ts: Math.floor(ts / 1000),
+                      data_age: Math.floor((Date.now() - ts) / 1000),
+                      kp: kp,
+                      kp_max_24h: max24,
+                      g_scale: gscale(kp),
+                      g_scale_max_24h: gscale(max24),
+                      a_running: parseInt(last.a_running, 10),
+                      station_count: parseInt(last.station_count, 10)
+                  });
+          url: '{$NOAA.KP.URL}'
+          headers:
+            - name: Accept
+              value: application/json
+          tags:
+            - tag: component
+              value: raw
+          triggers:
+            - uuid: 2d0daec305f5441b9b4ff48307ff6531
+              expression: 'nodata(/NOAA Space Weather Kp by HTTP/noaa.kp.summary,{$NOAA.NODATA})=1'
+              name: 'NOAA: Aucune donnée reçue de l''API depuis {$NOAA.NODATA}'
+              priority: AVERAGE
+              description: 'L''API NOAA ne répond pas, ou le prétraitement échoue (voir l''erreur de l''item maître).'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: de592cca8e184035946abd2dcef504ee
+          name: 'NOAA: Horodatage de la dernière mesure'
+          type: DEPENDENT
+          key: noaa.kp.timestamp
+          history: 90d
+          units: unixtime
+          description: 'Début de l''intervalle de 3h (UTC) de la dernière valeur Kp publiée.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.time_ts
+          master_item:
+            key: noaa.kp.summary
+          tags:
+            - tag: component
+              value: quality
+      tags:
+        - tag: class
+          value: service
+        - tag: target
+          value: noaa-swpc
+      macros:
+        - macro: '{$NOAA.DATA.MAXAGE}'
+          value: '21600'
+          description: 'Âge max (secondes) de la dernière mesure avant alerte. 21600 = 6h.'
+        - macro: '{$NOAA.G.DISASTER}'
+          value: '4'
+          description: 'Seuil échelle G pour Disaster (4 = G4, Kp 8).'
+        - macro: '{$NOAA.G.HIGH}'
+          value: '3'
+          description: 'Seuil échelle G pour High (3 = G3, Kp 7).'
+        - macro: '{$NOAA.G.WARN}'
+          value: '1'
+          description: 'Seuil échelle G pour Warning (1 = G1, Kp 5).'
+        - macro: '{$NOAA.INTERVAL}'
+          value: 15m
+          description: 'Fréquence d''interrogation (Kp publié toutes les 3h, valeurs provisoires mises à jour entre-temps).'
+        - macro: '{$NOAA.KP.URL}'
+          value: 'https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json'
+          description: 'URL du produit JSON Kp NOAA SWPC.'
+        - macro: '{$NOAA.NODATA}'
+          value: 1h
+          description: 'Délai sans réponse avant alerte de disponibilité.'
+      valuemaps:
+        - uuid: aad21c14b8b8477b96c797dd740ec08e
+          name: 'NOAA G-scale'
+          mappings:
+            - value: '0'
+              newvalue: 'G0 (calme)'
+            - value: '1'
+              newvalue: 'G1 (mineure)'
+            - value: '2'
+              newvalue: 'G2 (modérée)'
+            - value: '3'
+              newvalue: 'G3 (forte)'
+            - value: '4'
+              newvalue: 'G4 (sévère)'
+            - value: '5'
+              newvalue: 'G5 (extrême)'
+  graphs:
+    - uuid: a45cc854c1b54b17bf54697264660ef7
+      name: 'NOAA: Indice A'
+      graph_items:
+        - color: 43A047
+          item:
+            host: 'NOAA Space Weather Kp by HTTP'
+            key: noaa.kp.a_running
+    - uuid: eb96f36d94b4472082e9d519df56d35b
+      name: 'NOAA: Indice Kp'
+      yaxismax: '9'
+      ymin_type_1: FIXED
+      ymax_type_1: FIXED
+      graph_items:
+        - color: 1E88E5
+          item:
+            host: 'NOAA Space Weather Kp by HTTP'
+            key: noaa.kp.current
+        - sortorder: '1'
+          color: E53935
+          item:
+            host: 'NOAA Space Weather Kp by HTTP'
+            key: noaa.kp.max24h

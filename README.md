@@ -32,6 +32,7 @@ A repository with some Zabbix elements
 - :seedling:[Carbon footprint (simplified)](templates/7.4/Carbon_footprint/README.md) : Calculate your carbon footprint (VM on cloud)
 - :chart_with_upwards_trend: [Jira project overview](templates/7.4/Jira/README.md) : Overview of Jira projects
 - :computer: [OVH by HTTP (provider)](templates/7.4/OVH/README.md) : Cost explorer and Host prototypes for OVH (french provider)
+- :sun: [Space weather](templates/7.4/Space_weather/README.md) : NOAA Space Weather Kp by HTTP
 
 .
 
