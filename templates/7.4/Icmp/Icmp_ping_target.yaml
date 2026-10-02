@@ -1,0 +1,109 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: 57b7ae836ca64446ba2c296389c009b7
+      name: Templates/Modules
+  templates:
+    - uuid: 4bd8993551114e9297359b7729f0f3ce
+      template: 'ICMP target ping'
+      name: 'ICMP target ping'
+      description: |
+        Template Module ICMP Ping
+        
+        Template tooling version used: 0.41
+      groups:
+        - name: Templates/Modules
+      items:
+        - uuid: 746cae2fd412435891bccdf2ca618632
+          name: 'ICMP loss {$ICMP_TARGET}'
+          type: SIMPLE
+          key: 'icmppingloss[{$ICMP_TARGET}]'
+          history: 1w
+          value_type: FLOAT
+          units: '%'
+          tags:
+            - tag: component
+              value: health
+            - tag: component
+              value: network
+          triggers:
+            - uuid: 2c387181d30f47f7a5094bb26df7dd58
+              expression: 'min(/ICMP target ping/icmppingloss[{$ICMP_TARGET}],5m)>{$ICMP_LOSS_WARN} and min(/ICMP target ping/icmppingloss[{$ICMP_TARGET}],5m)<100'
+              name: 'High ICMP ping loss'
+              event_name: 'High ping loss for {$ICMP_TARGET}'
+              opdata: 'Loss: {ITEM.LASTVALUE1}'
+              priority: WARNING
+              dependencies:
+                - name: 'Unavailable by ICMP ping'
+                  expression: 'max(/ICMP target ping/icmpping[{$ICMP_TARGET}],#3)=0'
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: scope
+                  value: performance
+        - uuid: 635fafc4547f447bbfcbf51016071381
+          name: 'ICMP response time {$ICMP_TARGET}'
+          type: SIMPLE
+          key: 'icmppingsec[{$ICMP_TARGET}]'
+          history: 1w
+          value_type: FLOAT
+          units: s
+          tags:
+            - tag: component
+              value: health
+            - tag: component
+              value: network
+          triggers:
+            - uuid: f4897bd94c8a4a82bcc50d65abfcfb07
+              expression: 'avg(/ICMP target ping/icmppingsec[{$ICMP_TARGET}],5m)>{$ICMP_RESPONSE_TIME_WARN}'
+              name: 'High ICMP ping response time'
+              event_name: 'High ping response time for {$ICMP_TARGET}'
+              opdata: 'Value: {ITEM.LASTVALUE1}'
+              priority: WARNING
+              dependencies:
+                - name: 'High ICMP ping loss'
+                  expression: 'min(/ICMP target ping/icmppingloss[{$ICMP_TARGET}],5m)>{$ICMP_LOSS_WARN} and min(/ICMP target ping/icmppingloss[{$ICMP_TARGET}],5m)<100'
+                - name: 'Unavailable by ICMP ping'
+                  expression: 'max(/ICMP target ping/icmpping[{$ICMP_TARGET}],#3)=0'
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: scope
+                  value: performance
+        - uuid: ba69adbd20f64b45b930e8c5968ced6a
+          name: 'ICMP ping {$ICMP_TARGET}'
+          type: SIMPLE
+          key: 'icmpping[{$ICMP_TARGET}]'
+          history: 1w
+          valuemap:
+            name: 'Service state'
+          tags:
+            - tag: component
+              value: health
+            - tag: component
+              value: network
+          triggers:
+            - uuid: b97b31cf052241c88c8e867247b0749b
+              expression: 'max(/ICMP target ping/icmpping[{$ICMP_TARGET}],#3)=0'
+              name: 'Unavailable by ICMP ping'
+              event_name: 'Unavailable by ping for {$ICMP_TARGET}'
+              priority: HIGH
+              description: 'Last three attempts returned timeout.  Please check device connectivity.'
+              tags:
+                - tag: scope
+                  value: availability
+      macros:
+        - macro: '{$ICMP_LOSS_WARN}'
+          value: '20'
+        - macro: '{$ICMP_RESPONSE_TIME_WARN}'
+          value: '0.15'
+        - macro: '{$ICMP_TARGET}'
+          value: zabbix.edps.org
+      valuemaps:
+        - uuid: ff64ad0d3c6b4555b933f2e5fc0820e1
+          name: 'Service state'
+          mappings:
+            - value: '0'
+              newvalue: Down
+            - value: '1'
+              newvalue: Up

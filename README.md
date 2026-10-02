@@ -28,6 +28,7 @@ A repository with some Zabbix elements
 .
 
 - :white_flag: [Overview by tags](templates/7.4/Overview_by_tags/README.md) : Generate Hosts, CPU, RAM & Disk overview per tags (key/value)
+- :ping_pong: [ICMP Ping target](templates/7.4/Icmp/README.md) : Ping a target stored in macro `{$ICMP_TARGET}` (fork of the official template)
 - :computer: [Linux OS Version](templates/7.4/Linux_OS_version/README.md) : Retrieve Linux OS distributions and version
 - :seedling:[Carbon footprint (simplified)](templates/7.4/Carbon_footprint/README.md) : Calculate your carbon footprint (VM on cloud)
 - :chart_with_upwards_trend: [Jira project overview](templates/7.4/Jira/README.md) : Overview of Jira projects
