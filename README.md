@@ -19,7 +19,7 @@ A repository with some Zabbix elements
 .
 
 - :snake: [Inventory extractor (Python)](scripts/inventory_extractor/README.md) : Extract data from Zabbix hosts inventory into a CSV/Excel file
-- :snake: [OVH bills backfill(Python)](templates/ovh_bills_backfill/README.md) : Extract bills data from provider OVH and import them into Zabbix
+- :snake: [OVH bills backfill(Python)](scripts/ovh_bills_backfill/README.md) : Extract bills data from provider OVH and import them into Zabbix
 
 .
 
@@ -29,7 +29,7 @@ A repository with some Zabbix elements
 
 - :white_flag: [Overview by tags](templates/7.4/Overview_by_tags/README.md) : Generate Hosts, CPU, RAM & Disk overview per tags (key/value)
 - :ping_pong: [ICMP Ping target](templates/7.4/Icmp/README.md) : Ping a target stored in macro `{$ICMP_TARGET}` (fork of the official template)
-- :computer: [Linux OS Version](templates/7.4/Linux_OS_version/README.md) : Retrieve Linux OS distributions and version
+- :computer: [Linux OS Version](templates/7.4/Linux_os_version/README.md) : Retrieve Linux OS distributions and version
 - :seedling:[Carbon footprint (simplified)](templates/7.4/Carbon_footprint/README.md) : Calculate your carbon footprint (VM on cloud)
 - :chart_with_upwards_trend: [Jira project overview](templates/7.4/Jira/README.md) : Overview of Jira projects
 - :computer: [OVH by HTTP (provider)](templates/7.4/OVH/README.md) : Cost explorer and Host prototypes for OVH (french provider)

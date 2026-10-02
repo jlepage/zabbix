@@ -1,4 +1,4 @@
-# ICMP target ping
+# ICMP target ping - Zabbix template
 
 A fork of the official Zabbix **ICMP Ping** template (Zabbix 7.4).
 

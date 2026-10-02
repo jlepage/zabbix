@@ -1,4 +1,4 @@
-# OVH (French Provider) by HTTP - Zabbix template
+# OVH by HTTP (French Provider) - Zabbix template
 .
 
 **OVH Cost Explorer**

@@ -154,3 +154,10 @@ The storm triggers are chained with dependencies, so only the highest active lev
 - NOAA SWPC data products: https://services.swpc.noaa.gov/
 - Zabbix dependent items: https://www.zabbix.com/documentation/current/en/manual/config/items/itemtypes/dependent_items
 - Zabbix JavaScript preprocessing: https://www.zabbix.com/documentation/current/en/manual/config/items/preprocessing/javascript
+
+
+## Copyrights
+
+.
+
+Copyrights [jLepage - Zabbix Certified Trainer](https://formation.jlepage.fr/formation/zabbix/formations-zabbix-l-outil-opensource-de-monitoring) / [jLepage blog](https://www.jlepage.blog)
