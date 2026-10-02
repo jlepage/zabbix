@@ -24,13 +24,13 @@ If the host is monitored by a proxy, that proxy sends the ping. Choosing the pro
 
 1. Import `Icmp_ping_target.yaml`.
 2. Link the template to a host.
-3. On the host, set `{$ICMP_TARGET}` to the address you want to ping. Don't rely on the template default (`zabbix.edps.org`).
+3. On the host, set `{$ICMP_TARGET}` to the address you want to ping. Don't rely on the template default (`<change_me>`).
 
 ## Macros
 
 | Macro | Default | Description |
 |---|---|---|
-| `{$ICMP_TARGET}` | `zabbix.edps.org` | IP address or hostname to ping. Set it on each host. |
+| `{$ICMP_TARGET}` | `<change_me>` | IP address or hostname to ping. Set it on each host. |
 | `{$ICMP_LOSS_WARN}` | `20` | Packet loss warning threshold (%). |
 | `{$ICMP_RESPONSE_TIME_WARN}` | `0.15` | Response time warning threshold (seconds). |
 

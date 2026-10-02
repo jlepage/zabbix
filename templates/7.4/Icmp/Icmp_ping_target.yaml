@@ -9,7 +9,7 @@ zabbix_export:
       name: 'ICMP target ping'
       description: |
         Template Module ICMP Ping
-        
+
         Template tooling version used: 0.41
       groups:
         - name: Templates/Modules
@@ -98,7 +98,7 @@ zabbix_export:
         - macro: '{$ICMP_RESPONSE_TIME_WARN}'
           value: '0.15'
         - macro: '{$ICMP_TARGET}'
-          value: zabbix.edps.org
+          value: '<change_me>'
       valuemaps:
         - uuid: ff64ad0d3c6b4555b933f2e5fc0820e1
           name: 'Service state'
