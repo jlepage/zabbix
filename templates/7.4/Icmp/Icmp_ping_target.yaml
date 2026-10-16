@@ -7,6 +7,9 @@ zabbix_export:
     - uuid: 4bd8993551114e9297359b7729f0f3ce
       template: 'ICMP target ping'
       name: 'ICMP target ping'
+      vendor:
+        name: jLepage
+        version: 7.4-0
       description: |
         Template Module ICMP Ping
 

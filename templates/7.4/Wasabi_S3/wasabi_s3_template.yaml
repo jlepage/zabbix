@@ -1,0 +1,818 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+  - uuid: 57b7ae836ca64446ba2c296389c009b7
+    name: Templates/Modules
+  templates:
+  - uuid: 8ab46ceb6b3f4572b2c9cf88eaea42ea
+    template: Wasabi S3
+    name: Wasabi S3
+    vendor:
+        name: jLepage
+        version: 7.4-0
+    description: |-
+      Monitoring of a Wasabi S3 service, run from the Zabbix server or proxy.
+
+      Level 1 - Endpoint availability (simple checks, no credentials).
+      Level 2 - Functional write/read/delete test (external script wasabi_check.sh).
+      Level 3 - Bucket storage, traffic and requests from the Wasabi Stats API (auto-discovered, daily data), with account-level totals.
+
+      See README.md for setup.
+    groups:
+    - name: Templates/Modules
+    items:
+    - uuid: 020ca269bc1740da976d8d49cc7422d1
+      name: Wasabi endpoint {$WASABI.ENDPOINT} availability
+      type: SIMPLE
+      key: net.tcp.service[https,{$WASABI.ENDPOINT},443]
+      history: 1w
+      valuemap:
+        name: Service state
+      tags:
+      - tag: component
+        value: availability
+      - tag: service
+        value: wasabi
+      triggers:
+      - uuid: beb103d480d243a9a16d95ad4bac245f
+        expression: max(/Wasabi S3/net.tcp.service[https,{$WASABI.ENDPOINT},443],#3)=0
+        name: Wasabi endpoint unavailable
+        event_name: Wasabi endpoint {$WASABI.ENDPOINT} unavailable
+        priority: HIGH
+        description: The last three HTTPS connection attempts to the Wasabi endpoint failed.
+        tags:
+        - tag: scope
+          value: availability
+    - uuid: 0886e1c4eced4771a73736abe43f7335
+      name: Wasabi endpoint {$WASABI.ENDPOINT} response time
+      type: SIMPLE
+      key: net.tcp.service.perf[https,{$WASABI.ENDPOINT},443]
+      history: 1w
+      value_type: FLOAT
+      units: s
+      tags:
+      - tag: component
+        value: performance
+      - tag: service
+        value: wasabi
+      triggers:
+      - uuid: 25d713b0f9ee4842a290cf7666c8b16d
+        expression: avg(/Wasabi S3/net.tcp.service.perf[https,{$WASABI.ENDPOINT},443],5m)>{$WASABI.RESPONSE_TIME.WARN}
+        name: Wasabi endpoint high response time
+        event_name: Wasabi endpoint {$WASABI.ENDPOINT} slow (> {$WASABI.RESPONSE_TIME.WARN}s)
+        opdata: 'Value: {ITEM.LASTVALUE1}'
+        priority: WARNING
+        dependencies:
+        - &id001
+          name: Wasabi endpoint unavailable
+          expression: max(/Wasabi S3/net.tcp.service[https,{$WASABI.ENDPOINT},443],#3)=0
+        tags:
+        - tag: scope
+          value: performance
+    - uuid: 00c9fac084ee44d690219f30c59e9824
+      name: Wasabi write/read test duration
+      type: EXTERNAL
+      key: wasabi_check.sh["{$WASABI.PROBE.BUCKET}","{$WASABI.ENDPOINT}","{$WASABI.PROBE.PROFILE}"]
+      delay: '{$WASABI.PROBE.INTERVAL}'
+      history: 1w
+      value_type: FLOAT
+      units: s
+      timeout: 30s
+      description: Duration of a put/get/delete cycle on a small test object. Returns -1 when the test fails.
+      tags:
+      - tag: component
+        value: functional
+      - tag: service
+        value: wasabi
+      triggers:
+      - uuid: b47008f4d9da42c7a90834d73ad80b35
+        expression: max(/Wasabi S3/wasabi_check.sh["{$WASABI.PROBE.BUCKET}","{$WASABI.ENDPOINT}","{$WASABI.PROBE.PROFILE}"],#2)<0
+        name: Wasabi write/read test failed
+        event_name: Wasabi write/read test failed on bucket {$WASABI.PROBE.BUCKET}
+        priority: HIGH
+        description: The last two put/get/delete tests failed. Check credentials, bucket policy and run the script manually as the zabbix user.
+        dependencies:
+        - *id001
+        tags:
+        - tag: scope
+          value: availability
+      - uuid: 384b5d2a8e7b4603a4cb1132bee342ee
+        expression: min(/Wasabi S3/wasabi_check.sh["{$WASABI.PROBE.BUCKET}","{$WASABI.ENDPOINT}","{$WASABI.PROBE.PROFILE}"],#3)>{$WASABI.PROBE.WARN}
+        name: Wasabi write/read test slow
+        event_name: Wasabi write/read test slower than {$WASABI.PROBE.WARN}s
+        opdata: 'Value: {ITEM.LASTVALUE1}'
+        priority: WARNING
+        dependencies:
+        - *id001
+        tags:
+        - tag: scope
+          value: performance
+      - uuid: 740b7557f8144f5baed342aac5d41ee3
+        expression: nodata(/Wasabi S3/wasabi_check.sh["{$WASABI.PROBE.BUCKET}","{$WASABI.ENDPOINT}","{$WASABI.PROBE.PROFILE}"],30m)=1
+        name: 'Wasabi write/read test: no data'
+        event_name: Wasabi write/read test returned no data for 30m
+        priority: WARNING
+        description: The script did not return any value (missing script, timeout, or unsupported item).
+        tags:
+        - tag: scope
+          value: availability
+    - uuid: 1dac8714f6374e8d9acf9b98fca9fe42
+      name: 'Wasabi total: storage size'
+      type: CALCULATED
+      key: wasabi.total.size
+      delay: 0;h7
+      history: 365d
+      value_type: FLOAT
+      units: B
+      params: sum(last_foreach(//wasabi.stats.size[*]))
+      description: Raw stored data. Sum over all discovered buckets (disabled items of lost buckets are ignored).
+      tags:
+      - tag: component
+        value: total
+      - tag: service
+        value: wasabi
+    - uuid: c36ab14d728b4f51be06c293c219542f
+      name: 'Wasabi total: padded storage size'
+      type: CALCULATED
+      key: wasabi.total.padded
+      delay: 0;h7
+      history: 365d
+      value_type: FLOAT
+      units: B
+      params: sum(last_foreach(//wasabi.stats.padded[*]))
+      description: Storage size used for billing. Sum over all discovered buckets (disabled items of lost buckets are ignored).
+      tags:
+      - tag: component
+        value: total
+      - tag: service
+        value: wasabi
+    - uuid: a0ebeddcd5fa4a80ae8d5569734e907a
+      name: 'Wasabi total: deleted storage size'
+      type: CALCULATED
+      key: wasabi.total.deleted
+      delay: 0;h7
+      history: 365d
+      value_type: FLOAT
+      units: B
+      params: sum(last_foreach(//wasabi.stats.deleted[*]))
+      description: Deleted data still billed because of the minimum storage duration. Sum over all discovered buckets (disabled items of lost buckets are ignored).
+      tags:
+      - tag: component
+        value: total
+      - tag: service
+        value: wasabi
+    - uuid: f5590259b0dc47ec9e0a12126cd631f2
+      name: 'Wasabi total: billable storage (estimate)'
+      type: CALCULATED
+      key: wasabi.total.billable
+      delay: 0;h7
+      history: 365d
+      value_type: FLOAT
+      units: B
+      params: sum(last_foreach(//wasabi.stats.padded[*])) + sum(last_foreach(//wasabi.stats.deleted[*]))
+      description: Padded storage + deleted storage. Estimate to compare with the invoice.
+      tags:
+      - tag: component
+        value: total
+      - tag: service
+        value: wasabi
+      triggers:
+      - uuid: 58633be3f3ee4c10b9240d54390d2b07
+        expression: last(/Wasabi S3/wasabi.total.billable,#8)>0 and last(/Wasabi S3/wasabi.total.billable)>(1+{$WASABI.GROWTH.WARN}/100)*last(/Wasabi S3/wasabi.total.billable,#8)
+        name: 'Wasabi total: fast storage growth'
+        event_name: 'Wasabi: billable storage grew by more than {$WASABI.GROWTH.WARN}% in 7 days'
+        opdata: 'Billable: {ITEM.LASTVALUE1}'
+        priority: WARNING
+        description: Compares today with the value 7 days ago (one value per day). A backup job may no longer purge old data.
+        tags:
+        - tag: scope
+          value: capacity
+    - uuid: 8a12cc82235f4ee7ae9dccc3059eaeac
+      name: 'Wasabi total: billable objects'
+      type: CALCULATED
+      key: wasabi.total.objects
+      delay: 0;h7
+      history: 365d
+      value_type: UNSIGNED
+      params: sum(last_foreach(//wasabi.stats.objects[*]))
+      tags:
+      - tag: component
+        value: total
+      - tag: service
+        value: wasabi
+    - uuid: 9279db567ec6469dad5dadabfde95e5b
+      name: 'Wasabi total: active buckets'
+      type: CALCULATED
+      key: wasabi.total.buckets
+      delay: 0;h7
+      history: 365d
+      value_type: UNSIGNED
+      params: count(last_foreach(//wasabi.stats.size[*]))
+      description: Number of discovered buckets with data.
+      tags:
+      - tag: component
+        value: total
+      - tag: service
+        value: wasabi
+    - uuid: bb1de605d2ee410bbbc61b9877d5efe1
+      name: 'Wasabi total: uploaded (daily)'
+      type: CALCULATED
+      key: wasabi.total.upload
+      delay: 0;h7
+      history: 365d
+      value_type: FLOAT
+      units: B
+      params: sum(last_foreach(//wasabi.stats.upload[*]))
+      tags:
+      - tag: component
+        value: total
+      - tag: service
+        value: wasabi
+    - uuid: 7292a34bd8f240d1a87561f72f82c91f
+      name: 'Wasabi total: downloaded (daily)'
+      type: CALCULATED
+      key: wasabi.total.download
+      delay: 0;h7
+      history: 365d
+      value_type: FLOAT
+      units: B
+      params: sum(last_foreach(//wasabi.stats.download[*]))
+      tags:
+      - tag: component
+        value: total
+      - tag: service
+        value: wasabi
+    - uuid: 10b8771346c348b494b26def022d652f
+      name: 'Wasabi total: downloaded (30 days)'
+      type: CALCULATED
+      key: wasabi.total.download.30d
+      delay: 0;h7
+      history: 365d
+      value_type: FLOAT
+      units: B
+      params: sum(sum_foreach(//wasabi.stats.download[*],30d))
+      tags:
+      - tag: component
+        value: total
+      - tag: service
+        value: wasabi
+    - uuid: e36769a03c654e3f90b3e6b856490fcf
+      name: 'Wasabi total: 30d download / storage ratio'
+      type: CALCULATED
+      key: wasabi.total.egress.ratio
+      delay: 0;h7
+      history: 365d
+      value_type: FLOAT
+      units: '%'
+      params: sum(sum_foreach(//wasabi.stats.download[*],30d)) / sum(last_foreach(//wasabi.stats.size[*])) * 100
+      description: Account-level egress ratio, the one the Wasabi egress policy applies to.
+      tags:
+      - tag: component
+        value: total
+      - tag: service
+        value: wasabi
+      triggers:
+      - uuid: 81cb78eac3e94aafb2bfa6b0c9dc6caf
+        expression: last(/Wasabi S3/wasabi.total.egress.ratio)>{$WASABI.EGRESS.RATIO.WARN}
+        name: 'Wasabi total: high egress ratio'
+        event_name: 'Wasabi: 30d downloads above {$WASABI.EGRESS.RATIO.WARN}% of stored data'
+        opdata: 'Ratio: {ITEM.LASTVALUE1}'
+        priority: WARNING
+        description: Check the Wasabi egress policy of your contract.
+        tags:
+        - tag: scope
+          value: capacity
+    - uuid: c3148e21dae247b6a01e0add05ef3b98
+      name: 'Wasabi total: billable storage, 30d average'
+      type: CALCULATED
+      key: wasabi.total.billable.avg30d
+      delay: 0;h8
+      history: 365d
+      value_type: FLOAT
+      units: B
+      params: avg(//wasabi.total.billable,30d)
+      description: Approximation of the monthly billed volume (Wasabi bills an average over the month).
+      tags:
+      - tag: component
+        value: total
+      - tag: service
+        value: wasabi
+    - uuid: 64fe69b1a98e469590cbae5fb14e7b26
+      name: 'Wasabi total: estimated monthly cost'
+      type: CALCULATED
+      key: wasabi.total.cost
+      delay: 0;h8
+      history: 365d
+      value_type: FLOAT
+      params: avg(//wasabi.total.billable,30d) / 1000000000000 * {$WASABI.PRICE.TB}
+      description: 30-day average billable storage (decimal TB) x {$WASABI.PRICE.TB}. 0 when the price is not set. Approximation only.
+      tags:
+      - tag: component
+        value: total
+      - tag: service
+        value: wasabi
+      triggers:
+      - uuid: 552f5a2b354b45e69fd6a7a91ceefd59
+        expression: '{$WASABI.BUDGET}>0 and last(/Wasabi S3/wasabi.total.cost)>{$WASABI.BUDGET}'
+        name: 'Wasabi total: estimated cost above budget'
+        event_name: 'Wasabi: estimated monthly cost above {$WASABI.BUDGET}'
+        opdata: 'Cost: {ITEM.LASTVALUE1}'
+        priority: WARNING
+        tags:
+        - tag: scope
+          value: cost
+    discovery_rules:
+    - uuid: 19304e1328d2403e81eb8405debe4647
+      name: Wasabi buckets discovery
+      type: SCRIPT
+      key: wasabi.buckets.discovery
+      delay: 6h
+      timeout: 30s
+      params: |
+        var p = JSON.parse(value);
+        if (!p.auth || p.auth.indexOf('{$') === 0) {
+            return '[]';
+        }
+        var skipEmpty = (p.skip_empty !== '0');
+
+        // Two days back: Stats API records are daily and published with a delay.
+        var day = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
+        var latest = {}, page = 0, pages = 1;
+
+        while (page < pages && page < 50) {
+            var req = new HttpRequest();
+            req.addHeader('Authorization: ' + p.auth);
+            var resp = req.get('https://stats.wasabisys.com/v1/standalone/utilizations/bucket'
+                + '?from=' + day + '&pageSize=100&pageNum=' + page);
+            if (req.getStatus() !== 200) {
+                throw 'Stats API error: HTTP ' + req.getStatus();
+            }
+            var data = JSON.parse(resp);
+            var recs = Array.isArray(data) ? data : (data.Records || []);
+            for (var i = 0; i < recs.length; i++) {
+                var r = recs[i], b = r.Bucket;
+                // Keep only the most recent record of each bucket.
+                if (b && (!latest[b] || r.StartTime > latest[b].StartTime)) {
+                    latest[b] = r;
+                }
+            }
+            pages = (data.PageInfo && data.PageInfo.PageCount) || 1;
+            page++;
+        }
+
+        var out = [];
+        Object.keys(latest).forEach(function (b) {
+            var r = latest[b];
+            // A deleted (or emptied) bucket keeps publishing records with no data left.
+            var empty = (r.RawStorageSizeBytes || 0) === 0 && (r.NumBillableObjects || 0) === 0;
+            if (!(skipEmpty && empty)) {
+                out.push({'{#BUCKET}': b});
+            }
+        });
+        return JSON.stringify(out);
+      parameters:
+      - name: auth
+        value: '{$WASABI.STATS.AUTH}'
+      - name: skip_empty
+        value: '{$WASABI.STATS.SKIP_EMPTY}'
+      description: Discovers buckets from the Wasabi Stats API. Buckets with no data left (deleted or emptied) are skipped when {$WASABI.STATS.SKIP_EMPTY}=1. Returns nothing when {$WASABI.STATS.AUTH} is not set.
+      filter:
+        evaltype: AND
+        conditions:
+        - macro: '{#BUCKET}'
+          value: '{$WASABI.STATS.BUCKET.MATCHES}'
+          formulaid: A
+        - macro: '{#BUCKET}'
+          value: '{$WASABI.STATS.BUCKET.NOT_MATCHES}'
+          operator: NOT_MATCHES_REGEX
+          formulaid: B
+      lifetime_type: DELETE_AFTER
+      lifetime: 7d
+      enabled_lifetime_type: DISABLE_IMMEDIATELY
+      item_prototypes:
+      - uuid: d9c9495825de4a1d9d1fb0de172bd585
+        name: 'Bucket {#BUCKET}: Stats API raw data'
+        type: HTTP_AGENT
+        key: wasabi.stats.raw[{#BUCKET}]
+        delay: 0;h6
+        history: '0'
+        value_type: TEXT
+        timeout: 15s
+        url: https://stats.wasabisys.com/v1/standalone/utilizations/bucket/{#BUCKET}
+        query_fields:
+        - name: latest
+          value: 'true'
+        - name: pageSize
+          value: '1'
+        headers:
+        - name: Authorization
+          value: '{$WASABI.STATS.AUTH}'
+        description: Latest daily utilization record for the bucket. Collected once a day at 06:00 (server/proxy time) so that each daily value is stored only once.
+        tags:
+        - tag: component
+          value: raw
+        - tag: bucket
+          value: '{#BUCKET}'
+      - uuid: 212a62fd77c440a2bfa497b679c8af27
+        name: 'Bucket {#BUCKET}: storage size'
+        type: DEPENDENT
+        key: wasabi.stats.size[{#BUCKET}]
+        delay: '0'
+        history: 365d
+        units: B
+        preprocessing:
+        - type: JSONPATH
+          parameters:
+          - $.Records[0].RawStorageSizeBytes
+        master_item:
+          key: wasabi.stats.raw[{#BUCKET}]
+        tags:
+        - tag: component
+          value: storage
+        - tag: bucket
+          value: '{#BUCKET}'
+        trigger_prototypes:
+        - uuid: 4086fd1fc054469d8c20049b084b6350
+          expression: '{$WASABI.BUCKET.SIZE.MAX:"{#BUCKET}"}>0 and last(/Wasabi S3/wasabi.stats.size[{#BUCKET}])>{$WASABI.BUCKET.SIZE.MAX:"{#BUCKET}"}'
+          name: 'Bucket {#BUCKET}: size above threshold'
+          opdata: 'Size: {ITEM.LASTVALUE1}'
+          priority: WARNING
+          description: Disabled by default (threshold 0). Set {$WASABI.BUCKET.SIZE.MAX:"<bucket>"} to enable it.
+          tags:
+          - tag: scope
+            value: capacity
+      - uuid: d16cf167c3d0455695e96cb5506cf706
+        name: 'Bucket {#BUCKET}: padded storage size'
+        type: DEPENDENT
+        key: wasabi.stats.padded[{#BUCKET}]
+        delay: '0'
+        history: 365d
+        units: B
+        description: Storage size used for billing (minimum object size applied).
+        preprocessing:
+        - type: JSONPATH
+          parameters:
+          - $.Records[0].PaddedStorageSizeBytes
+        master_item:
+          key: wasabi.stats.raw[{#BUCKET}]
+        tags:
+        - tag: component
+          value: storage
+        - tag: bucket
+          value: '{#BUCKET}'
+      - uuid: e887ea1870f0438ca38b5c6f5e70e3d4
+        name: 'Bucket {#BUCKET}: metadata storage size'
+        type: DEPENDENT
+        key: wasabi.stats.metadata[{#BUCKET}]
+        delay: '0'
+        history: 365d
+        units: B
+        preprocessing:
+        - type: JSONPATH
+          parameters:
+          - $.Records[0].MetadataStorageSizeBytes
+        master_item:
+          key: wasabi.stats.raw[{#BUCKET}]
+        tags:
+        - tag: component
+          value: storage
+        - tag: bucket
+          value: '{#BUCKET}'
+      - uuid: 5c7193afa5344849b153b3dd4ff6fe09
+        name: 'Bucket {#BUCKET}: billable objects'
+        type: DEPENDENT
+        key: wasabi.stats.objects[{#BUCKET}]
+        delay: '0'
+        history: 365d
+        preprocessing:
+        - type: JSONPATH
+          parameters:
+          - $.Records[0].NumBillableObjects
+        master_item:
+          key: wasabi.stats.raw[{#BUCKET}]
+        tags:
+        - tag: component
+          value: storage
+        - tag: bucket
+          value: '{#BUCKET}'
+      - uuid: 4223c4473a8d440a8bbad561855752c4
+        name: 'Bucket {#BUCKET}: deleted storage size'
+        type: DEPENDENT
+        key: wasabi.stats.deleted[{#BUCKET}]
+        delay: '0'
+        history: 365d
+        units: B
+        description: Deleted data still billed because of the minimum storage duration.
+        preprocessing:
+        - type: JSONPATH
+          parameters:
+          - $.Records[0].DeletedStorageSizeBytes
+        master_item:
+          key: wasabi.stats.raw[{#BUCKET}]
+        tags:
+        - tag: component
+          value: storage
+        - tag: bucket
+          value: '{#BUCKET}'
+      - uuid: 3168290314bd43c7a3209936b8b5d45d
+        name: 'Bucket {#BUCKET}: stats record date'
+        type: DEPENDENT
+        key: wasabi.stats.date[{#BUCKET}]
+        delay: '0'
+        history: 30d
+        units: unixtime
+        preprocessing:
+        - type: JSONPATH
+          parameters:
+          - $.Records[0].CreateTime
+        - type: JAVASCRIPT
+          parameters:
+          - return Math.floor(Date.parse(value) / 1000);
+        master_item:
+          key: wasabi.stats.raw[{#BUCKET}]
+        tags:
+        - tag: component
+          value: raw
+        - tag: bucket
+          value: '{#BUCKET}'
+        trigger_prototypes:
+        - uuid: 3a6451705ed8436f95ce17a22defb1f6
+          expression: now()-last(/Wasabi S3/wasabi.stats.date[{#BUCKET}])>{$WASABI.STATS.STALE}
+          name: 'Bucket {#BUCKET}: Stats API data is stale'
+          priority: INFO
+          description: The latest Stats API record is older than {$WASABI.STATS.STALE}. Stats are daily, a delay of one day is normal.
+          tags:
+          - tag: scope
+            value: availability
+      - uuid: 735572b1d6684f6191fa3f32e9fecc47
+        name: 'Bucket {#BUCKET}: uploaded (daily)'
+        type: DEPENDENT
+        key: wasabi.stats.upload[{#BUCKET}]
+        delay: '0'
+        history: 365d
+        units: B
+        preprocessing:
+        - type: JSONPATH
+          parameters:
+          - $.Records[0].UploadBytes
+        master_item:
+          key: wasabi.stats.raw[{#BUCKET}]
+        tags:
+        - tag: component
+          value: traffic
+        - tag: bucket
+          value: '{#BUCKET}'
+      - uuid: ad311e0713bd4d0ea2b8b746fb07f632
+        name: 'Bucket {#BUCKET}: downloaded (daily)'
+        type: DEPENDENT
+        key: wasabi.stats.download[{#BUCKET}]
+        delay: '0'
+        history: 365d
+        units: B
+        preprocessing:
+        - type: JSONPATH
+          parameters:
+          - $.Records[0].DownloadBytes
+        master_item:
+          key: wasabi.stats.raw[{#BUCKET}]
+        tags:
+        - tag: component
+          value: traffic
+        - tag: bucket
+          value: '{#BUCKET}'
+      - uuid: 49f9d8143cd34bdaae74031b0dd99ed3
+        name: 'Bucket {#BUCKET}: GET requests (daily)'
+        type: DEPENDENT
+        key: wasabi.stats.calls.get[{#BUCKET}]
+        delay: '0'
+        history: 365d
+        preprocessing:
+        - type: JSONPATH
+          parameters:
+          - $.Records[0].NumGETCalls
+        master_item:
+          key: wasabi.stats.raw[{#BUCKET}]
+        tags:
+        - tag: component
+          value: requests
+        - tag: bucket
+          value: '{#BUCKET}'
+      - uuid: 18ea902f2d754684bdd07f007a112859
+        name: 'Bucket {#BUCKET}: PUT requests (daily)'
+        type: DEPENDENT
+        key: wasabi.stats.calls.put[{#BUCKET}]
+        delay: '0'
+        history: 365d
+        preprocessing:
+        - type: JSONPATH
+          parameters:
+          - $.Records[0].NumPUTCalls
+        master_item:
+          key: wasabi.stats.raw[{#BUCKET}]
+        tags:
+        - tag: component
+          value: requests
+        - tag: bucket
+          value: '{#BUCKET}'
+      - uuid: 6bf857dd71c846398ba8abf4ae03882d
+        name: 'Bucket {#BUCKET}: DELETE requests (daily)'
+        type: DEPENDENT
+        key: wasabi.stats.calls.delete[{#BUCKET}]
+        delay: '0'
+        history: 365d
+        preprocessing:
+        - type: JSONPATH
+          parameters:
+          - $.Records[0].NumDELETECalls
+        master_item:
+          key: wasabi.stats.raw[{#BUCKET}]
+        tags:
+        - tag: component
+          value: requests
+        - tag: bucket
+          value: '{#BUCKET}'
+      - uuid: e253ca1fbd6c4ef49721a79ef7123c9f
+        name: 'Bucket {#BUCKET}: LIST requests (daily)'
+        type: DEPENDENT
+        key: wasabi.stats.calls.list[{#BUCKET}]
+        delay: '0'
+        history: 365d
+        preprocessing:
+        - type: JSONPATH
+          parameters:
+          - $.Records[0].NumLISTCalls
+        master_item:
+          key: wasabi.stats.raw[{#BUCKET}]
+        tags:
+        - tag: component
+          value: requests
+        - tag: bucket
+          value: '{#BUCKET}'
+      - uuid: adcc44864278423b98b241cb6cc79b9f
+        name: 'Bucket {#BUCKET}: 30d download / storage ratio'
+        type: CALCULATED
+        key: wasabi.stats.egress.ratio[{#BUCKET}]
+        delay: 0;h7
+        history: 365d
+        value_type: FLOAT
+        units: '%'
+        params: sum(//wasabi.stats.download[{#BUCKET}],30d) / last(//wasabi.stats.size[{#BUCKET}]) * 100
+        description: 'Downloaded volume over the last 30 days compared to the current storage size. Indicative only: the Wasabi egress policy applies to the whole account.'
+        tags:
+        - tag: component
+          value: traffic
+        - tag: bucket
+          value: '{#BUCKET}'
+        trigger_prototypes:
+        - uuid: 23522baf12d74ffda31dab67ae181e9f
+          expression: last(/Wasabi S3/wasabi.stats.egress.ratio[{#BUCKET}])>{$WASABI.EGRESS.RATIO.WARN:"{#BUCKET}"}
+          name: 'Bucket {#BUCKET}: high egress ratio'
+          event_name: 'Bucket {#BUCKET}: 30d download above {$WASABI.EGRESS.RATIO.WARN:"{#BUCKET}"}% of storage'
+          opdata: 'Ratio: {ITEM.LASTVALUE1}'
+          priority: WARNING
+          description: Check the Wasabi egress policy of your contract.
+          tags:
+          - tag: scope
+            value: capacity
+      graph_prototypes:
+      - uuid: 9239ba97a0f94b53af9753e75f4428cd
+        name: 'Bucket {#BUCKET}: traffic (daily)'
+        graph_items:
+        - color: 1A7C11
+          calc_fnc: ALL
+          item:
+            host: Wasabi S3
+            key: wasabi.stats.upload[{#BUCKET}]
+        - sortorder: '1'
+          color: F63100
+          calc_fnc: ALL
+          item:
+            host: Wasabi S3
+            key: wasabi.stats.download[{#BUCKET}]
+      - uuid: eb2dc59d1db242a8a259479b16331ef9
+        name: 'Bucket {#BUCKET}: requests (daily)'
+        graph_items:
+        - color: 1A7C11
+          item:
+            host: Wasabi S3
+            key: wasabi.stats.calls.get[{#BUCKET}]
+        - sortorder: '1'
+          color: 2774A4
+          item:
+            host: Wasabi S3
+            key: wasabi.stats.calls.put[{#BUCKET}]
+        - sortorder: '2'
+          color: F63100
+          item:
+            host: Wasabi S3
+            key: wasabi.stats.calls.delete[{#BUCKET}]
+        - sortorder: '3'
+          color: A54F10
+          item:
+            host: Wasabi S3
+            key: wasabi.stats.calls.list[{#BUCKET}]
+    tags:
+    - tag: class
+      value: cloud
+    - tag: target
+      value: wasabi
+    macros:
+    - macro: '{$WASABI.BUCKET.SIZE.MAX}'
+      value: '0'
+      description: Bucket size alert threshold in bytes (suffixes K/M/G/T allowed). 0 = disabled. Use context per bucket.
+    - macro: '{$WASABI.EGRESS.RATIO.WARN}'
+      value: '80'
+      description: 30-day download / storage ratio warning threshold (%). Context per bucket allowed.
+    - macro: '{$WASABI.BUDGET}'
+      value: '0'
+      description: Monthly budget for the cost estimate. 0 = trigger disabled.
+    - macro: '{$WASABI.DELETED.RATIO.WARN}'
+      value: '20'
+      description: Deleted storage threshold, in % of padded storage.
+    - macro: '{$WASABI.ENDPOINT}'
+      value: s3.eu-central-1.wasabisys.com
+      description: Wasabi S3 endpoint for your region (hostname only).
+    - macro: '{$WASABI.GROWTH.WARN}'
+      value: '20'
+      description: Billable storage growth threshold over 7 days (%).
+    - macro: '{$WASABI.PRICE.TB}'
+      value: '0'
+      description: Price per TB per month, used for the cost estimate. 0 = no estimate.
+    - macro: '{$WASABI.PROBE.BUCKET}'
+      description: Bucket used for the write/read test.
+    - macro: '{$WASABI.PROBE.INTERVAL}'
+      value: 10m
+      description: Interval of the write/read test.
+    - macro: '{$WASABI.PROBE.PROFILE}'
+      value: wasabi-probe
+      description: AWS CLI profile used by wasabi_check.sh.
+    - macro: '{$WASABI.PROBE.WARN}'
+      value: '10'
+      description: Write/read test duration warning threshold (seconds).
+    - macro: '{$WASABI.RESPONSE_TIME.WARN}'
+      value: '0.5'
+      description: Endpoint TCP/HTTPS response time warning threshold (seconds).
+    - macro: '{$WASABI.STATS.AUTH}'
+      type: SECRET_TEXT
+      description: Stats API credentials, format AccessKey:SecretKey. Empty = Stats API disabled.
+    - macro: '{$WASABI.STATS.BUCKET.MATCHES}'
+      value: .*
+      description: 'Regex: buckets to discover.'
+    - macro: '{$WASABI.STATS.BUCKET.NOT_MATCHES}'
+      value: CHANGE_IF_NEEDED
+      description: 'Regex: buckets to ignore.'
+    - macro: '{$WASABI.STATS.SKIP_EMPTY}'
+      value: '1'
+      description: 1 = do not discover buckets with no data left (deleted or emptied). 0 = discover them.
+    - macro: '{$WASABI.STATS.STALE}'
+      value: 2d
+      description: Age after which Stats API data is considered stale.
+    valuemaps:
+    - uuid: 3f36e2b08f2148c891921eb0e1c201a8
+      name: Service state
+      mappings:
+      - value: '0'
+        newvalue: Down
+      - value: '1'
+        newvalue: Up
+  triggers:
+  - uuid: ab80c0d3a88b4a05b1e4f0eb666fb4f8
+    expression: last(/Wasabi S3/wasabi.total.deleted)>{$WASABI.DELETED.RATIO.WARN}/100*last(/Wasabi S3/wasabi.total.padded)
+    name: 'Wasabi total: high deleted storage'
+    event_name: 'Wasabi: deleted storage above {$WASABI.DELETED.RATIO.WARN}% of active storage'
+    opdata: 'Deleted: {ITEM.LASTVALUE1}'
+    priority: WARNING
+    description: Large deletions are still billed until the minimum storage duration ends. Check backup retention settings.
+    tags:
+    - tag: scope
+      value: capacity
+  graphs:
+  - uuid: 81bc583b3f644a49bf5b08a364205da3
+    name: 'Wasabi total: storage'
+    graph_items:
+    - color: 2774A4
+      item:
+        host: Wasabi S3
+        key: wasabi.total.padded
+    - sortorder: '1'
+      color: F63100
+      item:
+        host: Wasabi S3
+        key: wasabi.total.deleted
+    - sortorder: '2'
+      color: 1A7C11
+      item:
+        host: Wasabi S3
+        key: wasabi.total.billable
+  - uuid: 4c840e7fe5ab409395adf517aba91800
+    name: 'Wasabi total: traffic (daily)'
+    graph_items:
+    - color: 1A7C11
+      item:
+        host: Wasabi S3
+        key: wasabi.total.upload
+    - sortorder: '1'
+      color: F63100
+      item:
+        host: Wasabi S3
+        key: wasabi.total.download

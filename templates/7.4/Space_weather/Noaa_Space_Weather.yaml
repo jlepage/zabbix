@@ -7,6 +7,9 @@ zabbix_export:
     - uuid: cae15ec28e6f486d86f9da9685dc1e63
       template: 'NOAA Space Weather Kp by HTTP'
       name: 'NOAA Space Weather Kp by HTTP'
+      vendor:
+        name: jLepage
+        version: 7.4-0
       description: |
         Surveillance de l'activité géomagnétique (indice planétaire Kp) via l'API publique NOAA SWPC.
         Source : https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json
