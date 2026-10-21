@@ -1,5 +1,8 @@
 # NOAA Space Weather Kp by HTTP
 
+**Mon article de blog (en français)**:
+[Surveiller les tempetes solaires avec Zabbix](https://www.jlepage.blog/blog/zabbix-3/surveiller-les-tempetes-solaires-avec-zabbix-7)
+
 ## Overview
 
 This template monitors geomagnetic activity using the **planetary Kp index** published by the NOAA Space Weather Prediction Center (SWPC). It raises alerts when the storm level on the NOAA **G-scale** (G1 to G5) goes above configurable thresholds.
@@ -14,9 +17,6 @@ Typical use cases:
 - Early warning for teams operating power grids, long pipelines, aviation or satellite services.
 - Aurora alerts for the curious.
 
-
-**Mon article de blog (en français)**:
-[Surveiller les tempetes solaires avec Zabbix](https://www.jlepage.blog/blog/zabbix-3/surveiller-les-tempetes-solaires-avec-zabbix-7)
 
 ## Requirements
 

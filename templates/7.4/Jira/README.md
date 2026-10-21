@@ -1,5 +1,8 @@
 # Jira ticket statistics per project - Zabbix Template
 
+**Mon article de blog (en français)**:
+[Suivre les projets Jira dans Zabbix](https://www.jlepage.blog/blog/zabbix-3/suivre-les-projets-jira-dans-zabbix-8)
+
 .
 
 This integration pulls per-project Jira ticket statistics into Zabbix, without manual per-project setup.
@@ -8,10 +11,6 @@ Project discovery feeds a Zabbix LLD rule, filterable by regex on project key, n
 
 Per-project metrics cover volume (open tickets, new/resolved in the last 7 days), warning signals (overdue, unassigned, high priority) and backlog health (age distribution across 4 buckets, average age using the "uptime" unit for readable formatting).
 Calculated items using sum_foreach() aggregate these metrics across all projects for global graphs and reports, including a properly volume-weighted average age. Requirements: a classic Jira Cloud API token and "Browse Projects" permission on the relevant projects.
-
-
-**Mon article de blog (en français)**:
-[Suivre les projets Jira dans Zabbix](https://www.jlepage.blog/blog/zabbix-3/suivre-les-projets-jira-dans-zabbix-8)
 
 
 **Per project and global metrics**
