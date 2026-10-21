@@ -150,4 +150,13 @@ The resulting values should therefore be considered estimates and orders of magn
 
 .
 
-Copyrights [jLepage - Zabbix Certified Trainer](https://formation.jlepage.fr/formation/zabbix/formations-zabbix-l-outil-opensource-de-monitoring) / [jLepage blog](https://www.jlepage.blog)
+Formations certifiées Zabbix:
+[ZCS v7](https://formation.jlepage.fr/formation/zabbix/zcs-zabbix-certified-specialist-formation-specialiste-zabbix),
+[ZCP v7](https://formation.jlepage.fr/formation/zabbix/zcp-zabbix-certified-professional-formation-professionnel-zabbix),
+[ZCE v7](https://formation.jlepage.fr/formation/zabbix/zce-zabbix-certified-expert-formation-expert-zabbix),
+[ZCS / ZCP Upgrade v8](https://formation.jlepage.fr/formation/zabbix/zcsu-zabbix-certified-specialist-upgrade-v8-formation-specialiste-zabbix),
+[ZCS v8](https://formation.jlepage.fr/formation/zabbix/zcs-v8-zabbix-certified-specialist-formation-specialiste-zabbix),
+[ZCP v8](https://formation.jlepage.fr/formation/zabbix/zcp-v8-zabbix-certified-professional-formation-professionnel-zabbix),
+[ZCE v8](https://formation.jlepage.fr/formation/zabbix/zce-v8-zabbix-certified-expert-v8-formation-expert-zabbix)
+
+**Copyrights 2026 [jLepage - Zabbix Certified Trainer](https://formation.jlepage.fr/formation/zabbix/formations-zabbix-l-outil-opensource-de-monitoring) / [jLepage blog](https://www.jlepage.blog)**
