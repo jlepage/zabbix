@@ -3,13 +3,13 @@
 #  Zabbix Summit 2026 (Riga, Latvia) - 10 tips to please your IT Manager and keep him away from real stuff
 
 **The presentation on YouTube** :
-(https://www.youtube.com/embed/o5wEW3m1zmE)[https://www.youtube.com/embed/o5wEW3m1zmE?start=0&autoplay=1]
+[https://www.youtube.com/embed/o5wEW3m1zmE](https://www.youtube.com/embed/o5wEW3m1zmE?start=0&autoplay=1)
 
 **The slides** :
-(https://assets.zabbix.com/events/2026/zabbix_summit_2026/slides/d1/11_Jerome_Lepage.pdf)[https://assets.zabbix.com/events/2026/zabbix_summit_2026/slides/d1/11_Jerome_Lepage.pdf]
+[https://assets.zabbix.com/events/2026/zabbix_summit_2026/slides/d1/11_Jerome_Lepage.pdf](https://assets.zabbix.com/events/2026/zabbix_summit_2026/slides/d1/11_Jerome_Lepage.pdf)
 
 **Mon article de blog (en français)**:
-(Zabbix summit 2026)[https://www.jlepage.blog/blog/conferences-2/zabbix-summit-2026-9]
+[Zabbix summit 2026](https://www.jlepage.blog/blog/conferences-2/zabbix-summit-2026-9)
 
 
 

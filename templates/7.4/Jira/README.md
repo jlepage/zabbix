@@ -11,7 +11,7 @@ Calculated items using sum_foreach() aggregate these metrics across all projects
 
 
 **Mon article de blog (en français)**:
-(Suivre les projets Jira dans Zabbix)[https://www.jlepage.blog/blog/zabbix-3/suivre-les-projets-jira-dans-zabbix-8]
+[Suivre les projets Jira dans Zabbix](https://www.jlepage.blog/blog/zabbix-3/suivre-les-projets-jira-dans-zabbix-8)
 
 
 **Per project and global metrics**

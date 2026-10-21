@@ -16,7 +16,7 @@ Typical use cases:
 
 
 **Mon article de blog (en français)**:
-(Surveiller les tempetes solaires avec Zabbix)[https://www.jlepage.blog/blog/zabbix-3/surveiller-les-tempetes-solaires-avec-zabbix-7]
+[Surveiller les tempetes solaires avec Zabbix](https://www.jlepage.blog/blog/zabbix-3/surveiller-les-tempetes-solaires-avec-zabbix-7)
 
 ## Requirements
 
