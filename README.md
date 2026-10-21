@@ -10,7 +10,7 @@ A repository with some Zabbix elements
 
 .
 - :mortar_board: Zabbix Conference Paris 2026 (Paris, France) : Services & SLA dans Zabbix
-- :mortar_board: [Zabbix Summit 2026 (Riga, Latvia)](conferences/zabbix_summit_2026/README.md) : 10 tips to please your IT Manager and keep him away from real stuff
+- :mortar_board: [Zabbix Summit 2026 (Riga, Latvia)](conferences/zabbix_summit_2026/README.md) : 10 tips to please your IT Manager and keep him away from real stuff (blog)[https://www.jlepage.blog/blog/conferences-2/zabbix-summit-2026-9]
 
 .
 
@@ -32,9 +32,9 @@ A repository with some Zabbix elements
 - :bucket: [Wasabi S3](templates/7.4/Wasabi_S3/README.md) : Wasabi S3 monitoring via HTTP and awscli (external script)
 - :computer: [Linux OS Version](templates/7.4/Linux_os_version/README.md) : Retrieve Linux OS distributions and version
 - :seedling:[Carbon footprint (simplified)](templates/7.4/Carbon_footprint/README.md) : Calculate your carbon footprint (VM on cloud)
-- :chart_with_upwards_trend: [Jira project overview](templates/7.4/Jira/README.md) : Overview of Jira projects
+- :chart_with_upwards_trend: [Jira project overview](templates/7.4/Jira/README.md) : Overview of Jira projects (blog)[https://www.jlepage.blog/blog/zabbix-3/suivre-les-projets-jira-dans-zabbix-8]
 - :computer: [OVH by HTTP (provider)](templates/7.4/OVH/README.md) : Cost explorer and Host prototypes for OVH (french provider)
-- :sunny: [Space weather](templates/7.4/Space_weather/README.md) : NOAA Space Weather Kp by HTTP
+- :sunny: [Space weather](templates/7.4/Space_weather/README.md) : NOAA Space Weather Kp by HTTP (blog)[https://www.jlepage.blog/blog/zabbix-3/surveiller-les-tempetes-solaires-avec-zabbix-7]
 
 .
 

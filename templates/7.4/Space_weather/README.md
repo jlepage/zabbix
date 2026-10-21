@@ -14,6 +14,10 @@ Typical use cases:
 - Early warning for teams operating power grids, long pipelines, aviation or satellite services.
 - Aurora alerts for the curious.
 
+
+**Mon article de blog (en français)**:
+(Surveiller les tempetes solaires avec Zabbix)[https://www.jlepage.blog/blog/zabbix-3/surveiller-les-tempetes-solaires-avec-zabbix-7]
+
 ## Requirements
 
 - Zabbix **7.4** or newer. The template uses the 7.4 export format. It can be adapted to 7.0 by changing the `version` field, since no 7.4-specific feature is used.

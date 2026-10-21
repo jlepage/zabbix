@@ -10,6 +10,10 @@ Per-project metrics cover volume (open tickets, new/resolved in the last 7 days)
 Calculated items using sum_foreach() aggregate these metrics across all projects for global graphs and reports, including a properly volume-weighted average age. Requirements: a classic Jira Cloud API token and "Browse Projects" permission on the relevant projects.
 
 
+**Mon article de blog (en français)**:
+(Suivre les projets Jira dans Zabbix)[https://www.jlepage.blog/blog/zabbix-3/suivre-les-projets-jira-dans-zabbix-8]
+
+
 **Per project and global metrics**
 
 - 0 to 3 months old tickets

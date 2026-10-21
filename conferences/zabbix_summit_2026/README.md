@@ -8,6 +8,10 @@
 **The slides** :
 (https://assets.zabbix.com/events/2026/zabbix_summit_2026/slides/d1/11_Jerome_Lepage.pdf)[https://assets.zabbix.com/events/2026/zabbix_summit_2026/slides/d1/11_Jerome_Lepage.pdf]
 
+**Mon article de blog (en français)**:
+(Zabbix summit 2026)[https://www.jlepage.blog/blog/conferences-2/zabbix-summit-2026-9]
+
+
 
 ### Abstract
 
